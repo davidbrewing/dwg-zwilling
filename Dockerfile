@@ -16,12 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 https://github.com/LibreDWG/libredwg.git /tmp/libredwg \
  && cd /tmp/libredwg \
  && sh autogen.sh \
- && ./configure --disable-bindings --disable-shared --enable-static \
+ && ./configure --disable-bindings \
  && make -j"$(nproc)" \
  && make install \
  && ldconfig \
  && cd / && rm -rf /tmp/libredwg \
- && dwg2dxf --version | head -n 1 || true
+ && dwg2dxf --version
 
 # --- 2) Anwendung ---
 WORKDIR /app
