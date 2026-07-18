@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Digitaler Zwilling – Industriestandort</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="three.min.js"></script>
 <script src="dxf.js"></script>
 <style>
   :root{
@@ -226,8 +226,12 @@ const hex = n => '#' + n.toString(16).padStart(6,'0');
 // ============================================================
 //  Three.js Setup
 // ============================================================
+function fatal(msg){var s=document.getElementById('stage');if(s)s.insertAdjacentHTML('beforeend','<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;color:#e6edf3;background:rgba(15,23,32,.94);z-index:20;font-size:15px;line-height:1.6">'+msg+'</div>');}
+if(typeof THREE==='undefined'){fatal('Die 3D-Bibliothek (three.min.js) konnte nicht geladen werden. Bitte einmal mit Strg+F5 neu laden. Bleibt es leer, ist die Datei auf dem Server nicht erreichbar.');throw new Error('THREE missing');}
 const canvas=document.getElementById('c');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+let renderer;
+try{renderer=new THREE.WebGLRenderer({canvas,antialias:true});}
+catch(e){fatal('Dieses Gerät/dieser Browser unterstützt kein 3D (WebGL). Bitte die Hardwarebeschleunigung im Browser aktivieren oder einen aktuellen Browser (Chrome, Edge, Firefox) verwenden.');throw e;}
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
