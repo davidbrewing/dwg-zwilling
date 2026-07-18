@@ -3,46 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Digitaler Zwilling – DWG/DXF Viewer</title>
+<title>Digitaler Zwilling – Industriestandort</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="dxf.js"></script>
 <style>
   :root{
     --bg:#0f1720;--panel:#161f2b;--panel2:#1d2836;--line:#2b3a4d;
-    --txt:#e6edf3;--muted:#93a4b8;--accent:#4aa3ff;--ok:#33a06f;--warn:#e08a2b;
+    --txt:#e6edf3;--muted:#93a4b8;--accent:#4aa3ff;
+    --bau:#3d7dd8;--energie:#e08a2b;--wartung:#33a06f;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);overflow:hidden}
-  #app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:56px 1fr;height:100vh}
-  #topbar{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+  #app{display:grid;grid-template-columns:288px 1fr;grid-template-rows:56px 1fr;height:100vh}
+  #topbar{grid-column:1/3;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)}
   .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
   .logo .dot{width:11px;height:11px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px var(--accent)}
   .logo .sub{color:var(--muted);font-size:12px;font-weight:400}
   .spacer{flex:1}
-  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 13px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap}
   .btn:hover{border-color:var(--accent);background:#20303f}
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
   .btn.primary:hover{background:#63b1ff}
-  #sidebar{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:16px 14px}
-  .sec-title{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 9px}
+  #sidebar{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px 12px}
+  .sec-title{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
   .sec-title:first-child{margin-top:0}
-  .ctrl{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0}
+  .ctrl{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;padding:5px 2px}
   .ctrl input[type=range]{width:120px;accent-color:var(--accent)}
-  .layer{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;cursor:pointer;user-select:none}
-  .layer:hover{background:var(--panel2)}
-  .layer input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
-  .swatch{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(255,255,255,.15)}
-  .layer .name{font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .layer .count{font-size:11px;color:var(--muted)}
+  .flt{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px;cursor:pointer;user-select:none}
+  .flt:hover{background:var(--panel2)}
+  .flt input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+  .swatch{width:12px;height:12px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(255,255,255,.15)}
+  .flt .name{font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .flt .count{font-size:11px;color:var(--muted)}
   .empty{color:var(--muted);font-size:12.5px;line-height:1.6;padding:6px 2px}
   #stage{position:relative;overflow:hidden}
   #c{display:block;width:100%;height:100%}
-  #drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;background:rgba(15,23,32,.75);z-index:5;transition:.15s}
+  #drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:rgba(15,23,32,.8);z-index:5;transition:.15s}
   #drop.hide{opacity:0;pointer-events:none}
   #drop.hot .zone{border-color:var(--accent);background:rgba(74,163,255,.08)}
-  #drop .zone{border:2px dashed var(--line);border-radius:16px;padding:46px 60px;max-width:520px}
+  #drop .zone{border:2px dashed var(--line);border-radius:16px;padding:40px 56px;max-width:520px}
   #drop h1{font-size:20px;margin-bottom:8px}
-  #drop p{color:var(--muted);font-size:13.5px;line-height:1.6;max-width:430px;margin:0 auto}
+  #drop p{color:var(--muted);font-size:13.5px;line-height:1.6;max-width:440px;margin:0 auto}
   #drop .formats{margin-top:10px;font-size:12px;color:var(--muted)}
   #drop .row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
   #hud{position:absolute;left:14px;bottom:12px;font-size:11px;color:var(--muted);background:rgba(15,23,32,.6);border:1px solid var(--line);padding:7px 11px;border-radius:8px;line-height:1.5;backdrop-filter:blur(4px)}
@@ -52,17 +53,38 @@
   #toast.err{border-color:#c0563d}
   .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  #info{position:absolute;top:14px;right:14px;width:300px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(340px);transition:transform .25s;overflow:hidden}
+  #info{position:absolute;top:14px;right:14px;width:312px;max-height:calc(100% - 28px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(360px);transition:transform .25s}
   #info.open{transform:translateX(0)}
-  .info-head{padding:14px 16px;border-bottom:1px solid var(--line);position:relative}
+  .info-head{padding:14px 16px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
   .info-head .cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:7px}
-  .info-head h2{font-size:16px;margin-top:5px}
-  .info-head .close{position:absolute;top:11px;right:12px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
-  .info-b{padding:6px 16px 14px}
-  .row2{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:12.5px;border-bottom:1px dotted #24313f}
+  .info-head h2{font-size:16px;margin-top:5px;line-height:1.25}
+  .info-head .bld{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .info-head .close{position:absolute;top:11px;right:12px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+  .dept{border-bottom:1px solid var(--line)}
+  .dept-h{padding:10px 16px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:9px}
+  .dept-h .bar{width:4px;height:15px;border-radius:2px}
+  .dept-b{padding:0 16px 12px}
+  .row2{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:12.5px;border-bottom:1px dotted #24313f}
   .row2:last-child{border-bottom:none}
   .row2 .k{color:var(--muted)}
-  .note{font-size:11.5px;color:var(--muted);background:rgba(74,163,255,.08);border:1px solid rgba(74,163,255,.25);border-radius:8px;padding:9px 11px;line-height:1.5;margin:8px 16px 14px}
+  .row2 .v{text-align:right;font-weight:500}
+  .badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:600;background:rgba(51,160,111,.18);color:#57c793}
+  .docs{padding:2px 16px 14px}
+  .doc{display:flex;align-items:center;gap:8px;font-size:12px;padding:7px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;margin-top:7px}
+  .doc .tag{font-size:9.5px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px}
+  .overlay{position:fixed;inset:0;background:rgba(6,10,15,.72);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(3px)}
+  .overlay.open{display:flex}
+  .modal{width:min(640px,92vw);max-height:88vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .modal h3{font-size:18px;margin-bottom:6px}
+  .modal p.lead{color:var(--muted);font-size:13px;line-height:1.55;margin-bottom:16px}
+  .modal .close-x{float:right;background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer}
+  .modal-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  select,.sel{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px}
+  textarea.export{width:100%;height:250px;background:#0b1017;color:#bfe3ff;border:1px solid var(--line);border-radius:9px;padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;resize:vertical;margin-top:6px}
+  .pipe-step{display:flex;gap:12px;padding:11px;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--panel2)}
+  .pipe-step .n{flex:0 0 26px;height:26px;border-radius:8px;background:var(--accent);color:#04121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .pipe-step .t b{font-size:13px}
+  .pipe-step .t p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
   input[type=file]{display:none}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
@@ -71,34 +93,47 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div class="logo"><span class="dot"></span> Digitaler Zwilling <span class="sub">· DWG/DXF Viewer</span></div>
+    <div class="logo"><span class="dot"></span> Digitaler Zwilling <span class="sub">· Industriestandort</span></div>
     <div class="spacer"></div>
     <span id="fileName" style="font-size:12.5px;color:var(--muted)"></span>
+    <button class="btn" id="btnDemo">🏭 Beispiel</button>
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
+    <button class="btn" id="btnExport">⤒ Exportieren</button>
     <button class="btn primary" id="btnReset">⟲ Ansicht</button>
     <input type="file" id="file" accept=".dxf,.dwg">
   </div>
 
   <div id="sidebar">
-    <div class="sec-title">Darstellung</div>
-    <div class="ctrl"><label for="extrude">Höhe (Extrusion)</label><input type="range" id="extrude" min="0" max="24" value="6" step="0.5"></div>
-    <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
-
-    <div class="sec-title">Layer</div>
-    <div id="layers"><div class="empty">Noch keine Datei geladen.</div></div>
+    <!-- Demo-Filter -->
+    <div id="demoFilters">
+      <div class="sec-title">Bauwerk</div>
+      <div id="fltBau"></div>
+      <div class="sec-title">Medien / Versorgung</div>
+      <div id="fltMedien"></div>
+      <div class="sec-title">Gebäude</div>
+      <div id="fltGeb"></div>
+    </div>
+    <!-- DXF-Filter -->
+    <div id="dxfFilters" style="display:none">
+      <div class="sec-title">Darstellung</div>
+      <div class="ctrl"><label for="extrude">Höhe (Extrusion)</label><input type="range" id="extrude" min="0" max="24" value="6" step="0.5"></div>
+      <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
+      <div class="sec-title">Layer</div>
+      <div id="layers"><div class="empty">–</div></div>
+    </div>
   </div>
 
   <div id="stage">
     <canvas id="c"></canvas>
 
-    <div id="drop">
+    <div id="drop" class="hide">
       <div class="zone">
-        <h1>DWG- oder DXF-Datei hochladen</h1>
-        <p>Ziehe eine Zeichnung hierher oder wähle eine Datei. Das Tool erzeugt daraus ein drehbares 3D-Modell, das nach Layern gefiltert und angeklickt werden kann.</p>
+        <h1>Eigene DWG- oder DXF-Datei laden</h1>
+        <p>Ziehe eine Zeichnung hierher oder wähle eine Datei. Sie wird als drehbares 3D-Modell dargestellt und nach Layern gefiltert. Das <b>Beispiel</b> oben zeigt ein vollständiges Modell mit hinterlegten Fachdaten.</p>
         <div class="formats">Unterstützt: <b>.dxf</b> (direkt im Browser) · <b>.dwg</b> (Umwandlung über den Konverter-Dienst)</div>
         <div class="row">
           <button class="btn primary" id="btnOpen2">Datei auswählen</button>
-          <button class="btn" id="btnDemo">Beispiel ansehen</button>
+          <button class="btn" id="btnDemo2">Beispiel ansehen</button>
         </div>
       </div>
     </div>
@@ -113,1277 +148,488 @@
     <div id="info">
       <div class="info-head">
         <button class="close" id="infoClose">×</button>
-        <div class="cat"><span class="swatch" id="iSwatch"></span><span id="iCat">Layer</span></div>
+        <div class="cat"><span class="swatch" id="iSwatch"></span><span id="iCat">–</span></div>
         <h2 id="iName">–</h2>
+        <div class="bld" id="iBld"></div>
       </div>
-      <div class="info-b" id="iBody"></div>
-      <div class="note">Hinweis: In dieser Ausbaustufe ist die Auswahl-Einheit der <b>Layer</b>. Das Hinterlegen von Fachdaten (Statik, Energie, Wartung) je Bauteil folgt im nächsten Schritt über das semantische Modell (IFC).</div>
+      <div id="iBody"></div>
     </div>
   </div>
 </div>
 
+<!-- Export-Modal -->
+<div class="overlay" id="exportOverlay">
+  <div class="modal">
+    <button class="close-x" data-close>×</button>
+    <h3>Daten exportieren</h3>
+    <p class="lead">Fachdaten aller Bauteile – zur Weiterverarbeitung (JSON für Schnittstellen, CSV für Excel/Instandhaltung). Auswahl gebäudespezifisch möglich.</p>
+    <div class="modal-row">
+      <label style="font-size:13px;color:var(--muted)">Umfang:</label>
+      <select id="expScope">
+        <option value="ALL">Gesamter Standort</option>
+        <option value="A">Nur Gebäude A · Produktionshalle</option>
+        <option value="B">Nur Gebäude B · Bürogebäude</option>
+        <option value="V">Nur Verbindung / Außenanlagen</option>
+      </select>
+      <button class="btn primary" id="expJson">JSON</button>
+      <button class="btn" id="expCsv">CSV</button>
+    </div>
+    <textarea class="export" id="exportText" readonly></textarea>
+    <div class="modal-row" style="margin-top:12px">
+      <button class="btn primary" id="expDownload">⤓ Herunterladen</button>
+      <button class="btn" id="expCopy">Kopieren</button>
+      <span id="expCount" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Import-Modal -->
+<div class="overlay" id="importOverlay">
+  <div class="modal">
+    <button class="close-x" data-close>×</button>
+    <h3>DWG- & PDF-Import</h3>
+    <p class="lead">So entsteht aus vorhandenen Plänen ein attribuiertes Modell. Native .dwg werden vom Konverter-Dienst in DXF umgewandelt.</p>
+    <div class="pipe-step"><div class="n">1</div><div class="t"><b>Geometrie extrahieren</b><p>DWG/DXF wird nach Layern eingelesen.</p></div></div>
+    <div class="pipe-step"><div class="n">2</div><div class="t"><b>3D ableiten</b><p>Konturen werden zu Körpern, Bauteile klassifiziert.</p></div></div>
+    <div class="pipe-step"><div class="n">3</div><div class="t"><b>Fachdaten verknüpfen</b><p>Statik, Anlagen, Wartung werden zugeordnet.</p></div></div>
+  </div>
+</div>
+
 <script>
-// ---------- Setup ----------
+// ============================================================
+//  Kategorien, Gebäude, Fachabteilungen
+// ============================================================
+const CATS = {
+  tragwerk:{label:'Tragwerk',        color:0x8aa0b8, grp:'bau',   extr:true},
+  huelle:  {label:'Gebäudehülle',    color:0x7f8ea3, grp:'bau',   extr:true},
+  anlagen: {label:'Anlagen / Geräte',color:0x8b6fd6, grp:'bau',   extr:true},
+  heizung: {label:'Heizung',         color:0xd8492f, grp:'medien', pipe:true},
+  waerme:  {label:'Fernwärme',       color:0xe8873a, grp:'medien', pipe:true},
+  kaelte:  {label:'Kälte',           color:0x5bc8ff, grp:'medien', pipe:true},
+  wasser:  {label:'Wasser',          color:0x3d8fe0, grp:'medien', pipe:true},
+  druckluft:{label:'Druckluft',      color:0x27d3e6, grp:'medien', pipe:true},
+  lueftung:{label:'Lüftung',         color:0x2fb6a8, grp:'medien', pipe:true},
+  elektro: {label:'Elektro',         color:0xe0b83a, grp:'medien', pipe:true},
+};
+const BLD = {
+  A:{label:'Gebäude A · Produktionshalle'},
+  B:{label:'Gebäude B · Bürogebäude'},
+  V:{label:'Verbindung / Außenanlagen'},
+};
+const DEPT = [
+  {k:'statik', label:'Bauabteilung · Statik', c:'var(--bau)'},
+  {k:'energie',label:'Energiemanagement',     c:'var(--energie)'},
+  {k:'wartung',label:'Standort · Wartung',    c:'var(--wartung)'},
+];
+const hex = n => '#' + n.toString(16).padStart(6,'0');
+
+// ============================================================
+//  Three.js Setup
+// ============================================================
 const canvas=document.getElementById('c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0f1720);
-const camera=new THREE.PerspectiveCamera(48,1,0.1,4000);
-scene.add(new THREE.HemisphereLight(0xbcd3ef,0x0e1620,0.9));
-const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(40,70,30); scene.add(dir);
-const grid=new THREE.GridHelper(200,40,0x2b3a4d,0x1b2735); grid.position.y=-0.05; scene.add(grid);
+scene.fog=new THREE.Fog(0x0f1720,120,320);
+const camera=new THREE.PerspectiveCamera(46,1,0.1,2000);
+scene.add(new THREE.HemisphereLight(0xbcd3ef,0x0e1620,0.8));
+const sun=new THREE.DirectionalLight(0xffffff,0.85);
+sun.position.set(40,70,30); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-70;sun.shadow.camera.right=70;sun.shadow.camera.top=70;sun.shadow.camera.bottom=-70;sun.shadow.camera.far=200;
+scene.add(sun);
+const grid=new THREE.GridHelper(240,60,0x2b3a4d,0x1b2735); grid.position.y=-0.05; scene.add(grid);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(240,240), new THREE.MeshStandardMaterial({color:0x121b26,roughness:1}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-0.06; ground.receiveShadow=true; scene.add(ground);
 
-let modelGroup=null;      // aktuelle Three-Gruppe
-let parsed=null;          // Parser-Ergebnis
-let transform=null;       // {cx,cy,s}
-const layerState={};      // name -> visible
-const pickables=[];       // Wand-Meshes für Klick
+let demoGroup=null, dxfGroup=null, mode='demo';
+const elements=[];              // semantische Bauteile (Demo)
+const dxfMeshes=[];             // Upload-Meshes
+let parsed=null, transform=null;
+const catOn={}, bldOn={}, layerOn={};
+let idc=0, selected=null;
 
-// ---------- Kamera / Orbit ----------
-const target=new THREE.Vector3(0,0,0);
-let radius=90,theta=-0.9,phi=1.0;
-function applyCam(){
-  const rp=radius*Math.sin(phi);
-  camera.position.set(target.x+rp*Math.sin(theta),target.y+radius*Math.cos(phi),target.z+rp*Math.cos(theta));
-  camera.lookAt(target);
+function mat(color,o){o=o||{};return new THREE.MeshStandardMaterial({color:color,roughness:o.rough==null?0.7:o.rough,metalness:o.metal==null?0.05:o.metal,transparent:o.opacity!=null,opacity:o.opacity==null?1:o.opacity,side:o.opacity!=null?THREE.DoubleSide:THREE.FrontSide});}
+function box(w,h,d,m){return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);}
+
+function addEl(mesh,o){
+  mesh.castShadow=true; mesh.receiveShadow=true;
+  mesh.userData={
+    id:'EL-'+String(++idc).padStart(3,'0'),
+    name:o.name, kategorie:o.cat, katLabel:CATS[o.cat].label, gebaeude:o.g, gebLabel:BLD[o.g].label,
+    statik:o.statik||null, energie:o.energie||null, wartung:o.wartung||null, dokumente:o.dokumente||[],
+    _e: mesh.material.emissive?mesh.material.emissive.clone():new THREE.Color(0)
+  };
+  demoGroup.add(mesh); elements.push(mesh);
 }
-const HOME={radius:90,theta:-0.9,phi:1.0};
-applyCam();
-let dragging=false,panning=false,lx=0,ly=0,moved=false;
-canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
-canvas.addEventListener('pointerup',()=>{dragging=false;});
-canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('pointermove',e=>{
-  if(!dragging){hover(e);return;}
-  moved=true;
-  const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
-  if(panning){
-    const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();
-    target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);
-  }else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));}
-  applyCam();
-});
-canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(6,Math.min(600,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
-document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.theta;phi=HOME.phi;target.set(0,0,0);applyCam();};
+function place(mesh,x,y,z){mesh.position.set(x,y,z);return mesh;}
+function pipe(o){
+  const v=o.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  const curve=new THREE.CatmullRomCurve3(v,false);
+  const geo=new THREE.TubeGeometry(curve,Math.max(16,(v.length-1)*8),o.r||0.13,10,false);
+  const m=new THREE.Mesh(geo,mat(CATS[o.cat].color,{rough:0.3,metal:0.5}));
+  addEl(m,o);
+}
 
-// ---------- Auswahl ----------
-const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();
-let selected=null;
-function pick(e){
+// ============================================================
+//  Semantisches Beispielmodell (2 Gebäude + Verbindung)
+// ============================================================
+function buildDemo(){
+  clearScene();
+  mode='demo';
+  demoGroup=new THREE.Group(); scene.add(demoGroup);
+  idc=0; elements.length=0;
+
+  // ---------- Gebäude A: Produktionshalle (28 x 20 x 8), Zentrum (-20,0) ----------
+  const Ax=-20, Az=0, Aw=28, Ad=20, Ah=8;
+  // Bodenplatte
+  addEl(place(box(Aw+1,0.4,Ad+1,mat(0x9aa7b5,{rough:0.95})),Ax,-0.2,Az),{cat:'tragwerk',g:'A',name:'Bodenplatte Halle A',
+    statik:{Material:'Stahlbeton',Betongüte:'C30/37',Bewehrung:'Q335 A oben+unten',Dicke:'40 cm','Zul. Bodenpressung':'250 kN/m²',Prüfstatus:'geprüft'},
+    wartung:{'Letzte Sichtprüfung':'2025-11-02',Intervall:'jährlich',Zuständig:'Bau'},
+    dokumente:[{name:'Statik_Bodenplatte_A.pdf',typ:'PDF'},{name:'Bewehrungsplan_A.dwg',typ:'DWG'}]});
+  // Stützen (3x2)
+  const AcolX=[Ax-10,Ax,Ax+10], AcolZ=[Az-8,Az+8];
+  AcolX.forEach((x,i)=>AcolZ.forEach((z,j)=>{
+    addEl(place(box(0.4,Ah,0.4,mat(0x5f6b7a,{rough:0.5,metal:0.35})),x,Ah/2,z),{cat:'tragwerk',g:'A',name:'Stahlstütze A-'+String.fromCharCode(65+i)+(j+1),
+      statik:{Material:'Stahl S355',Profil:'HEB 300','Zul. Normalkraft':'2.100 kN',Korrosionsschutz:'feuerverzinkt',Brandschutz:'R90',Prüfstatus:'geprüft'},
+      wartung:{'Letzte Prüfung':'2025-06-20',Intervall:'2 Jahre',Zuständig:'Bau'},
+      dokumente:[{name:'Stahlbau_Statik_A.pdf',typ:'PDF'}]});
+  }));
+  // Dachbinder
+  AcolZ.forEach((z,j)=>addEl(place(box(Aw+2,0.7,0.35,mat(0x6b7788,{rough:0.5,metal:0.35})),Ax,Ah+0.35,z),{cat:'tragwerk',g:'A',name:'Dachbinder A Achse '+(j?'B':'A'),
+    statik:{Material:'Stahl S355',Profil:'IPE 500',Spannweite:'28 m','Max. Feldmoment':'520 kNm',Durchbiegung:'L/300 ✓',Prüfstatus:'geprüft'},
+    wartung:{Intervall:'2 Jahre',Zuständig:'Bau'},dokumente:[{name:'Dachtragwerk_A.pdf',typ:'PDF'}]}));
+  // Dach
+  addEl(place(box(Aw+2,0.25,Ad+2,mat(0xaab6c4,{rough:0.85,opacity:0.34})),Ax,Ah+1,Az),{cat:'huelle',g:'A',name:'Dachfläche A',
+    energie:{'U-Wert':'0,18 W/m²K',Photovoltaik:'vorbereitet',Entwässerung:'innenliegend, 4 Gullys'},
+    statik:{Aufbau:'Trapezblech + 200 mm Dämmung','Schneelast':'0,85 kN/m²'},
+    wartung:{'Letzte Dachprüfung':'2025-03-11',Intervall:'jährlich',Zuständig:'Standortmanagement'},
+    dokumente:[{name:'Dachaufbau_A.pdf',typ:'PDF'}]});
+  // Fassade A (4 Wände transluzent)
+  [['Nord',Aw,0.15,Ax,Az-Ad/2],['Süd',Aw,0.15,Ax,Az+Ad/2],['Ost',0.15,Ad,Ax+Aw/2,Az],['West',0.15,Ad,Ax-Aw/2,Az]]
+    .forEach(w=>addEl(place(box(w[1],Ah,w[2],mat(0x8ea1b5,{rough:0.9,opacity:0.2})),w[3],Ah/2,w[4]),{cat:'huelle',g:'A',name:'Fassade A '+w[0],
+      statik:{Material:'Sandwich-Paneel (Stahl/PUR)',Dicke:'120 mm'},energie:{'U-Wert':'0,22 W/m²K','Luftdichtheit':'n50 ≤ 1,5'},
+      wartung:{Intervall:'2 Jahre',Zuständig:'Standortmanagement'},dokumente:[{name:'Fassadenschnitt_A.dwg',typ:'DWG'}]}));
+  // Maschinen A
+  addEl(place(box(6,3,3,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Ax-7,1.5,Az+4),{cat:'anlagen',g:'A',name:'Produktionsanlage 1',
+    energie:{'Elektr. Anschluss':'75 kW',Druckluft:'8 bar / 240 l/min',Kühlwasser:'6 m³/h',Abwärme:'ca. 22 kW'},
+    wartung:{'Letzte Wartung':'2026-01-18',Intervall:'quartalsweise',Zuständig:'Instandhaltung',Zustand:'gut'},
+    dokumente:[{name:'Anlage1_Wartungsplan.pdf',typ:'PDF'}]});
+  addEl(place(box(4,2.4,3,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Ax+8,1.2,Az-4),{cat:'anlagen',g:'A',name:'Produktionsanlage 2',
+    energie:{'Elektr. Anschluss':'45 kW',Druckluft:'8 bar / 120 l/min',Abwärme:'ca. 12 kW'},
+    wartung:{'Letzte Wartung':'2025-12-03',Intervall:'quartalsweise',Zuständig:'Instandhaltung'},
+    dokumente:[{name:'Anlage2_Handbuch.pdf',typ:'PDF'}]});
+  // Kompressorstation (Druckluft-Erzeuger)
+  addEl(place(box(2.4,2,1.8,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax-12,1,Az+7),{cat:'druckluft',g:'A',name:'Kompressorstation',
+    energie:{Typ:'Schraubenkompressor',Liefermenge:'420 l/min',Betriebsdruck:'8 bar','Elektr. Leistung':'11 kW','Abwärme-Nutzung':'ja (Heizung)'},
+    wartung:{'Letzte Wartung':'2025-10-20',Intervall:'halbjährlich',Zuständig:'Energiemanagement',Nächste:'2026-04-20'},
+    dokumente:[{name:'Kompressor_Datenblatt.pdf',typ:'PDF'},{name:'Druckluft_Wartung_2025.pdf',typ:'PDF'}]});
+  // RLT-Gerät auf Dach A
+  addEl(place(box(4,1.6,2.4,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax+6,Ah+1.9,Az),{cat:'lueftung',g:'A',name:'RLT-Zentralgerät A',
+    energie:{Typ:'RLT mit WRG',Luftleistung:'9.500 m³/h','Elektr. Anschluss':'11 kW',Wärmerückgewinnung:'82 %',Filter:'ISO ePM1 60%'},
+    wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement',Nächste:'2026-06-05'},
+    dokumente:[{name:'RLT_A_Protokoll.pdf',typ:'PDF'}]});
+  // Medien A (Rohre unter Dach, y≈7)
+  pipe({cat:'heizung',g:'A',name:'Heizung Vorlauf A',r:0.14,pts:[[Ax-13,7.3,Az-8],[Ax+13,7.3,Az-8]],
+    energie:{Medium:'Heizwasser Vorlauf',Nennweite:'DN 100',Volumenstrom:'42 m³/h',Vorlauftemperatur:'70 °C',Druck:'4,0 bar',Dämmung:'40 mm'},
+    wartung:{'Letzte Wartung':'2025-10-01',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizungsschema_A.pdf',typ:'PDF'}]});
+  pipe({cat:'wasser',g:'A',name:'Brauchwasser A',r:0.09,pts:[[Ax-13,6.9,Az-5],[Ax+13,6.9,Az-5]],
+    energie:{Medium:'Trinkwasser kalt',Nennweite:'DN 65',Volumenstrom:'11 m³/h',Druck:'3,2 bar',Temperatur:'12 °C',Material:'Edelstahl'},
+    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Trinkwasser_A.dwg',typ:'DWG'}]});
+  pipe({cat:'druckluft',g:'A',name:'Druckluftleitung A',r:0.08,pts:[[Ax-12,6.6,Az+7],[Ax-12,6.6,Az+2],[Ax+13,6.6,Az+2]],
+    energie:{Medium:'Druckluft',Nennweite:'DN 50',Betriebsdruck:'8 bar',Volumenstrom:'360 l/min',Material:'Aluminium'},
+    wartung:{'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Druckluftplan_A.pdf',typ:'PDF'}]});
+  pipe({cat:'lueftung',g:'A',name:'Lüftungskanal Zuluft A',r:0.35,pts:[[Ax-13,7.6,Az],[Ax+13,7.6,Az]],
+    energie:{Medium:'Zuluft',Querschnitt:'700×700',Volumenstrom:'9.500 m³/h',Geschwindigkeit:'5,4 m/s',Wärmerückgewinnung:'82 %'},
+    wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement'},dokumente:[{name:'Lueftungsplan_A.pdf',typ:'PDF'}]});
+  pipe({cat:'elektro',g:'A',name:'Kabeltrasse A',r:0.1,pts:[[Ax-13,7.9,Az+8],[Ax+13,7.9,Az+8]],
+    energie:{Medium:'Elektro NS',Bemessungsstrom:'400 A',Spannung:'400 V',Belegung:'Kraft + Steuerung',Reserve:'ca. 30 %'},
+    wartung:{'DGUV V3 Prüfung':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'Stromlaufplan_A.pdf',typ:'PDF'}]});
+
+  // ---------- Gebäude B: Bürogebäude (14 x 12 x 6), Zentrum (15,0) ----------
+  const Bx=15, Bz=0, Bw=14, Bd=12, Bh=6;
+  addEl(place(box(Bw+0.6,0.4,Bd+0.6,mat(0x9aa7b5,{rough:0.95})),Bx,-0.2,Bz),{cat:'tragwerk',g:'B',name:'Bodenplatte Büro B',
+    statik:{Material:'Stahlbeton',Betongüte:'C25/30',Bewehrung:'Q257 A',Dicke:'30 cm',Prüfstatus:'geprüft'},
+    wartung:{Intervall:'jährlich',Zuständig:'Bau'},dokumente:[{name:'Statik_Buero_B.pdf',typ:'PDF'}]});
+  // Zwischendecke (2 Geschosse)
+  addEl(place(box(Bw,0.3,Bd,mat(0xb2bccb,{rough:0.9,opacity:0.5})),Bx,3,Bz),{cat:'tragwerk',g:'B',name:'Geschossdecke B (EG/OG)',
+    statik:{Material:'Stahlbeton',Betongüte:'C30/37',Dicke:'22 cm','Nutzlast':'3,0 kN/m² (Büro)',Prüfstatus:'geprüft'},
+    wartung:{Intervall:'5 Jahre',Zuständig:'Bau'},dokumente:[{name:'Deckenplan_B.dwg',typ:'DWG'}]});
+  // Stützen B (4)
+  [[Bx-5,Bz-4],[Bx+5,Bz-4],[Bx-5,Bz+4],[Bx+5,Bz+4]].forEach((c,i)=>addEl(place(box(0.3,Bh,0.3,mat(0x5f6b7a,{rough:0.5,metal:0.3})),c[0],Bh/2,c[1]),{cat:'tragwerk',g:'B',name:'Stütze B-'+(i+1),
+    statik:{Material:'Stahlbeton',Betongüte:'C30/37',Querschnitt:'30×30 cm','Zul. Normalkraft':'900 kN',Prüfstatus:'geprüft'},wartung:{Intervall:'5 Jahre',Zuständig:'Bau'}}));
+  // Dach + Wände + Fenster B
+  addEl(place(box(Bw+0.6,0.25,Bd+0.6,mat(0xaab6c4,{rough:0.85,opacity:0.4})),Bx,Bh+0.9,Bz),{cat:'huelle',g:'B',name:'Dachfläche B',
+    energie:{'U-Wert':'0,16 W/m²K',Begrünung:'extensiv geplant'},statik:{Aufbau:'Flachdach, Dämmung 220 mm'},
+    wartung:{Intervall:'jährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Dach_B.pdf',typ:'PDF'}]});
+  [['Nord',Bw,0.15,Bx,Bz-Bd/2],['Süd',Bw,0.15,Bx,Bz+Bd/2],['Ost',0.15,Bd,Bx+Bw/2,Bz],['West',0.15,Bd,Bx-Bw/2,Bz]]
+    .forEach(w=>addEl(place(box(w[1],Bh,w[2],mat(0x9fb3c9,{rough:0.85,opacity:0.22})),w[3],Bh/2,w[4]),{cat:'huelle',g:'B',name:'Fassade B '+w[0],
+      energie:{'U-Wert Wand':'0,20 W/m²K','Fensteranteil':'40 %','U-Wert Fenster':'0,9 W/m²K (3-fach)'},statik:{Material:'Mauerwerk + WDVS'},
+      wartung:{Intervall:'3 Jahre',Zuständig:'Standortmanagement'},dokumente:[{name:'Fassade_B.dwg',typ:'DWG'}]}));
+  // Anlagen B: Wärmeübergabestation + Klimagerät (Kälte)
+  addEl(place(box(1.6,1.8,1,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx-5,0.9,Bz+4),{cat:'waerme',g:'B',name:'Wärmeübergabestation B',
+    energie:{Typ:'Fernwärme-Übergabe',Anschlussleistung:'60 kW',Vorlauf:'70 °C',Rücklauf:'50 °C',Wärmemengenzähler:'ja'},
+    wartung:{'Letzte Wartung':'2025-09-30',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Uebergabestation_B.pdf',typ:'PDF'}]});
+  addEl(place(box(1.8,1,1.2,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx+4,Bh+1.4,Bz),{cat:'kaelte',g:'B',name:'Klimagerät B (Kälte)',
+    energie:{Typ:'Splitklimaanlage / Kaltwasser',Kälteleistung:'24 kW',Kältemittel:'R32','Elektr. Leistung':'7 kW',SEER:'6,1'},
+    wartung:{'Letzte Wartung':'2026-02-15',Intervall:'jährlich (F-Gas)',Zuständig:'Energiemanagement',Nächste:'2027-02-15'},
+    dokumente:[{name:'Klimageraet_B_Fgas.pdf',typ:'PDF'}]});
+  // Medien B
+  pipe({cat:'heizung',g:'B',name:'Heizkreis B',r:0.08,pts:[[Bx-5,2.6,Bz+4],[Bx-5,2.6,Bz-4],[Bx+5,2.6,Bz-4]],
+    energie:{Medium:'Heizwasser',Nennweite:'DN 40',Vorlauftemperatur:'55 °C',Heizkörper:'12 Stk',Regelung:'Einzelraum'},
+    wartung:{'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizung_B.pdf',typ:'PDF'}]});
+  pipe({cat:'kaelte',g:'B',name:'Kaltwasserleitung B',r:0.08,pts:[[Bx+4,5.2,Bz],[Bx+4,2.6,Bz],[Bx-4,2.6,Bz]],
+    energie:{Medium:'Kaltwasser',Nennweite:'DN 40',Vorlauf:'7 °C',Rücklauf:'12 °C',Dämmung:'diffusionsdicht'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_B.pdf',typ:'PDF'}]});
+  pipe({cat:'wasser',g:'B',name:'Trinkwasser B',r:0.06,pts:[[Bx-5,2.4,Bz-4],[Bx+5,2.4,Bz-4]],
+    energie:{Medium:'Trinkwasser',Nennweite:'DN 32',Druck:'3,0 bar','Warmwasser':'dezentral'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  pipe({cat:'elektro',g:'B',name:'Elektro-Steigleitung B',r:0.07,pts:[[Bx-5,0.5,Bz+4],[Bx-5,5.5,Bz+4]],
+    energie:{Medium:'Elektro NS',Bemessungsstrom:'160 A',Spannung:'400 V','Unterverteilung':'EG + OG',PV:'Anschluss vorbereitet'},
+    wartung:{'DGUV V3':'2025-05-10',Intervall:'4 Jahre (Büro)',Zuständig:'Elektrotechnik'},dokumente:[{name:'E-Plan_B.pdf',typ:'PDF'}]});
+  pipe({cat:'lueftung',g:'B',name:'Lüftung Büro B',r:0.2,pts:[[Bx+4,5,Bz],[Bx-4,5,Bz]],
+    energie:{Medium:'Zu-/Abluft',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja'},
+    wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'}});
+
+  // ---------- Verbindung / Außenanlagen (Medientrasse A ⇄ B) ----------
+  // Trasse-Kanal (Element)
+  addEl(place(box(14,0.8,2.2,mat(0x74808f,{rough:0.9,opacity:0.45})),(-6+8)/2,0.3,0),{cat:'anlagen',g:'V',name:'Medienkanal / Versorgungstrasse',
+    statik:{Bauart:'begehbarer Betonkanal',Betongüte:'C30/37',Länge:'14 m',Querschnitt:'2,0×1,0 m'},
+    energie:{Belegung:'Fernwärme, Kälte, Druckluft, Elektro, Wasser'},
+    wartung:{'Letzte Begehung':'2025-08-19',Intervall:'2 Jahre',Zuständig:'Standortmanagement'},
+    dokumente:[{name:'Medientrasse_Schnitt.dwg',typ:'DWG'},{name:'Trasse_Belegung.pdf',typ:'PDF'}]});
+  // Leitungen quer über den Zwischenraum (A x=-6 ⇄ B x=8) auf y≈0.9
+  const gy=0.9;
+  pipe({cat:'waerme',g:'V',name:'Fernwärme Haupttrasse',r:0.16,pts:[[-6,gy,-0.6],[8,gy,-0.6]],
+    energie:{Medium:'Fernwärme',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'180 kW',Dämmung:'Kunststoffmantelrohr'},
+    wartung:{'Letzte Prüfung':'2025-07-04',Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Trasse.pdf',typ:'PDF'}]});
+  pipe({cat:'kaelte',g:'V',name:'Kälte-Verbindungsleitung',r:0.12,pts:[[-6,gy,0],[8,gy,0]],
+    energie:{Medium:'Kaltwasser',Nennweite:'DN 80',Vorlauf:'6 °C',Rücklauf:'12 °C','Quelle':'zentrale Kältemaschine Halle A'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_Trasse.pdf',typ:'PDF'}]});
+  pipe({cat:'druckluft',g:'V',name:'Druckluft-Verbindung',r:0.07,pts:[[-6,gy,0.5],[8,gy,0.5]],
+    energie:{Medium:'Druckluft',Nennweite:'DN 50',Betriebsdruck:'8 bar','Quelle':'Kompressorstation Halle A'},
+    wartung:{'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  pipe({cat:'elektro',g:'V',name:'Elektro-Erdkabel A→B',r:0.09,pts:[[-6,gy,0.9],[8,gy,0.9]],
+    energie:{Medium:'Elektro NS',Querschnitt:'4×95 mm²',Bemessungsstrom:'200 A','Verlegung':'im Kanal'},
+    wartung:{Intervall:'4 Jahre',Zuständig:'Elektrotechnik'},dokumente:[{name:'Erdkabel_AB.pdf',typ:'PDF'}]});
+  pipe({cat:'wasser',g:'V',name:'Trinkwasser-Verbindung',r:0.07,pts:[[-6,gy,-0.9],[8,gy,-0.9]],
+    energie:{Medium:'Trinkwasser',Nennweite:'DN 50','Quelle':'Hausanschluss Halle A'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+
+  // Zustandsdaten
+  document.getElementById('fileName').textContent='Beispiel: Industriestandort';
+  document.getElementById('stats').innerHTML='<b>'+elements.length+'</b> Bauteile · <b>2</b> Gebäude';
+  setUIMode('demo');
+  buildFilters();
+  fitCamera(60);
+  document.getElementById('drop').classList.add('hide');
+}
+
+function clearScene(){
+  [demoGroup,dxfGroup].forEach(g=>{ if(g){scene.remove(g);g.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});} });
+  demoGroup=null; dxfGroup=null; elements.length=0; dxfMeshes.length=0; deselect();
+}
+
+// ============================================================
+//  Filter (Demo)
+// ============================================================
+function buildFilters(){
+  const bau=document.getElementById('fltBau'), med=document.getElementById('fltMedien'), geb=document.getElementById('fltGeb');
+  bau.innerHTML=''; med.innerHTML=''; geb.innerHTML='';
+  const catCount={}; elements.forEach(m=>catCount[m.userData.kategorie]=(catCount[m.userData.kategorie]||0)+1);
+  const bldCount={}; elements.forEach(m=>bldCount[m.userData.gebaeude]=(bldCount[m.userData.gebaeude]||0)+1);
+  Object.entries(CATS).forEach(([key,c])=>{
+    if(!catCount[key]) return;
+    if(catOn[key]===undefined) catOn[key]=true;
+    const row=document.createElement('label'); row.className='flt';
+    row.innerHTML='<input type="checkbox" '+(catOn[key]?'checked':'')+'><span class="swatch" style="background:'+hex(c.color)+'"></span><span class="name">'+c.label+'</span><span class="count">'+catCount[key]+'</span>';
+    row.querySelector('input').addEventListener('change',e=>{catOn[key]=e.target.checked;applyDemoVis();});
+    (c.grp==='bau'?bau:med).appendChild(row);
+  });
+  Object.entries(BLD).forEach(([key,b])=>{
+    if(!bldCount[key]) return;
+    if(bldOn[key]===undefined) bldOn[key]=true;
+    const row=document.createElement('label'); row.className='flt';
+    row.innerHTML='<input type="checkbox" '+(bldOn[key]?'checked':'')+'><span class="name">'+b.label+'</span><span class="count">'+bldCount[key]+'</span>';
+    row.querySelector('input').addEventListener('change',e=>{bldOn[key]=e.target.checked;applyDemoVis();});
+    geb.appendChild(row);
+  });
+}
+function applyDemoVis(){
+  elements.forEach(m=>{ m.visible = catOn[m.userData.kategorie]!==false && bldOn[m.userData.gebaeude]!==false; });
+  if(selected && !selected.visible) deselect();
+}
+
+// ============================================================
+//  Auswahl + Info-Panel
+// ============================================================
+const ray=new THREE.Raycaster(), ptr=new THREE.Vector2();
+function pickAt(e){
   const r=canvas.getBoundingClientRect();
-  ptr.x=((e.clientX-r.left)/r.width)*2-1;ptr.y=-((e.clientY-r.top)/r.height)*2+1;
+  ptr.x=((e.clientX-r.left)/r.width)*2-1; ptr.y=-((e.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(ptr,camera);
-  const hit=ray.intersectObjects(pickables.filter(m=>m.visible),false);
+  const arr=(mode==='demo'?elements:dxfMeshes).filter(m=>m.visible);
+  const hit=ray.intersectObjects(arr,false);
   return hit.length?hit[0].object:null;
 }
-function hover(e){canvas.style.cursor=pick(e)?'pointer':'default';}
-canvas.addEventListener('click',e=>{if(moved)return;const o=pick(e);o?selectLayer(o.userData.layer):deselect();});
-function selectLayer(name){
-  selected=name;
-  const info=parsed.layers[name]||{color:'#c2ccd8'};
-  const ents=parsed.entities.filter(x=>x.layer===name);
-  const types={};ents.forEach(x=>types[x.type]=(types[x.type]||0)+1);
-  document.getElementById('iSwatch').style.background=info.color;
-  document.getElementById('iName').textContent=name;
+let moved=false;
+canvas.addEventListener('click',e=>{ if(moved)return; const o=pickAt(e); o?select(o):deselect(); });
+function hl(mesh,on){ if(!mesh.material.emissive)return; if(on){mesh.material.emissive.setHex(0x2b6bd6);mesh.material.emissiveIntensity=0.9;} else {mesh.material.emissive.copy(mesh.userData._e||new THREE.Color(0));mesh.material.emissiveIntensity=1;} }
+function select(mesh){
+  if(selected) hl(selected,false);
+  selected=mesh; hl(mesh,true);
+  const d=mesh.userData;
+  document.getElementById('iCat').textContent=(d.katLabel||'Layer')+' · '+(d.id||'');
+  document.getElementById('iSwatch').style.background = d.kategorie&&CATS[d.kategorie]?hex(CATS[d.kategorie].color):(d._col||'#c2ccd8');
+  document.getElementById('iName').textContent=d.name||d.layer||'Bauteil';
+  document.getElementById('iBld').textContent=d.gebLabel||'';
   let h='';
-  h+='<div class="row2"><span class="k">Objekte</span><span>'+ents.length+'</span></div>';
-  Object.entries(types).forEach(([t,n])=>{h+='<div class="row2"><span class="k">· '+t+'</span><span>'+n+'</span></div>';});
-  h+='<div class="row2"><span class="k">Farbe</span><span>'+info.color+'</span></div>';
+  if(d.statik||d.energie||d.wartung){
+    DEPT.forEach(dep=>{ const o=d[dep.k]; if(!o)return;
+      h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:'+dep.c+'"></span>'+dep.label+'</div><div class="dept-b">';
+      for(const[k,v] of Object.entries(o)){ let val=v; if(v==='geprüft'||v==='bestanden'||v==='gut'||v==='ja') val='<span class="badge">'+v+'</span>'; h+='<div class="row2"><span class="k">'+k+'</span><span class="v">'+val+'</span></div>'; }
+      h+='</div></div>';
+    });
+    if(d.dokumente&&d.dokumente.length){ h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Verknüpfte Dokumente</div><div class="docs">';
+      d.dokumente.forEach(x=>h+='<div class="doc"><span class="tag">'+x.typ+'</span>'+x.name+'</div>'); h+='</div></div>'; }
+  } else {
+    // DXF-Layer-Info
+    const ents=parsed?parsed.entities.filter(x=>x.layer===d.layer):[];
+    const types={}; ents.forEach(x=>types[x.type]=(types[x.type]||0)+1);
+    h+='<div class="dept"><div class="dept-b" style="padding-top:12px">';
+    h+='<div class="row2"><span class="k">Objekte</span><span>'+ents.length+'</span></div>';
+    Object.entries(types).forEach(([t,n])=>h+='<div class="row2"><span class="k">· '+t+'</span><span>'+n+'</span></div>');
+    h+='</div></div><div class="note" style="margin:8px 16px 14px">Hinweis: Hochgeladene DXF-Dateien enthalten keine Fachdaten – Auswahl-Einheit ist der Layer. Fachdaten sind im <b>Beispiel</b> hinterlegt.</div>';
+  }
   document.getElementById('iBody').innerHTML=h;
   document.getElementById('info').classList.add('open');
 }
-function deselect(){selected=null;document.getElementById('info').classList.remove('open');}
+function deselect(){ if(selected) hl(selected,false); selected=null; document.getElementById('info').classList.remove('open'); }
 document.getElementById('infoClose').onclick=deselect;
 
-// ---------- Geometrie-Aufbau ----------
-function tx(x){return (x-transform.cx)*transform.s;}
-function tz(y){return -(y-transform.cy)*transform.s;}
-
-function buildModel(){
-  if(modelGroup){scene.remove(modelGroup);modelGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
-  pickables.length=0;
-  modelGroup=new THREE.Group();
-  const H=parseFloat(document.getElementById('extrude').value);
-  const showLines=document.getElementById('showLines').checked;
-
-  // pro Layer sammeln
-  const perLayer={};
-  function L(name){if(!perLayer[name])perLayer[name]={line:[],wall:[]};return perLayer[name];}
-  function seg(name,x1,y1,x2,y2){
-    const a=[tx(x1),0,tz(y1)],b=[tx(x2),0,tz(y2)];
-    L(name).line.push(a[0],a[1],a[2],b[0],b[1],b[2]);
-    if(H>0){
-      const w=L(name).wall;
-      // Quad (2 Dreiecke): a, b, b+H, a+H
-      const ax=a[0],az=a[2],bx=b[0],bz=b[2];
-      w.push(ax,0,az, bx,0,bz, bx,H,bz,  ax,0,az, bx,H,bz, ax,H,az);
-    }
-  }
-  function circlePts(cx,cy,r,a0,a1){
-    const pts=[],n=48,s=a0*Math.PI/180,e=a1*Math.PI/180,span=(e<s?e+2*Math.PI:e)-s;
-    for(let i=0;i<=n;i++){const a=s+span*i/n;pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}
-    return pts;
-  }
-  parsed.entities.forEach(ent=>{
-    if(ent.type==='LINE'){seg(ent.layer,ent.x1,ent.y1,ent.x2,ent.y2);}
-    else if(ent.type==='POLYLINE'){
-      const v=ent.verts;for(let i=0;i<v.length-1;i++)seg(ent.layer,v[i].x,v[i].y,v[i+1].x,v[i+1].y);
-      if(ent.closed&&v.length>2)seg(ent.layer,v[v.length-1].x,v[v.length-1].y,v[0].x,v[0].y);
-    }
-    else if(ent.type==='CIRCLE'){const p=circlePts(ent.cx,ent.cy,ent.r,0,360);for(let i=0;i<p.length-1;i++)seg(ent.layer,p[i][0],p[i][1],p[i+1][0],p[i+1][1]);}
-    else if(ent.type==='ARC'){const p=circlePts(ent.cx,ent.cy,ent.r,ent.a0,ent.a1);for(let i=0;i<p.length-1;i++)seg(ent.layer,p[i][0],p[i][1],p[i+1][0],p[i+1][1]);}
-    else if(ent.type==='3DFACE'){const q=ent.pts;seg(ent.layer,q[0].x,q[0].y,q[1].x,q[1].y);seg(ent.layer,q[1].x,q[1].y,q[2].x,q[2].y);seg(ent.layer,q[2].x,q[2].y,q[3].x,q[3].y);}
+// ============================================================
+//  Export (gebäudespezifisch)
+// ============================================================
+function collectData(scope){
+  return elements.filter(m=>scope==='ALL'||m.userData.gebaeude===scope).map(m=>{const d=m.userData;
+    return {id:d.id,name:d.name,kategorie:d.katLabel,gebaeude:d.gebLabel,statik:d.statik||null,energie:d.energie||null,wartung:d.wartung||null,dokumente:d.dokumente||[]};});
+}
+function toCSV(data){
+  const cols=['id','name','kategorie','gebaeude','material','betonguete','tragfaehigkeit','medium','nennweite','volumenstrom','druck','letzte_wartung','intervall','zustaendig'];
+  const g=(o,keys)=>{ if(!o)return''; for(const k of keys)for(const kk of Object.keys(o))if(kk.toLowerCase().replace(/[^a-zß]/g,'').includes(k))return o[kk]; return ''; };
+  const rows=[cols.join(';')];
+  data.forEach(e=>{const s=e.statik||{},en=e.energie||{},w=e.wartung||{};
+    rows.push([e.id,e.name,e.kategorie,e.gebaeude,g(s,['material']),g(s,['beton']),g(s,['normalkraft','tragf','moment','bodenpressung','nutzlast']),
+      g(en,['medium']),g(en,['nennweite']),g(en,['volumenstrom','luftleistung','liefermenge']),g(en,['druck']),
+      g(w,['letzte','wartung','prfung']),g(w,['intervall']),g(w,['zust'])].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'));
   });
+  return rows.join('\n');
+}
+const exportOverlay=document.getElementById('exportOverlay');
+let curName='export.json',curMime='application/json';
+function refreshExport(kind){
+  const scope=document.getElementById('expScope').value;
+  const data=collectData(scope);
+  if(kind==='csv'){ document.getElementById('exportText').value=toCSV(data); curName='bauteilliste_'+scope+'.csv'; curMime='text/csv'; }
+  else { document.getElementById('exportText').value=JSON.stringify(data,null,2); curName='fachdaten_'+scope+'.json'; curMime='application/json'; }
+  document.getElementById('expCount').textContent=data.length+' Bauteile';
+}
+document.getElementById('btnExport').onclick=()=>{ if(mode!=='demo'){toast('Export der Fachdaten ist im Beispiel-Modell verfügbar.',true);return;} refreshExport('json'); exportOverlay.classList.add('open'); };
+document.getElementById('expJson').onclick=()=>refreshExport('json');
+document.getElementById('expCsv').onclick=()=>refreshExport('csv');
+document.getElementById('expScope').onchange=()=>refreshExport(curMime==='text/csv'?'csv':'json');
+document.getElementById('expDownload').onclick=()=>{const b=new Blob([document.getElementById('exportText').value],{type:curMime});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=curName;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
+document.getElementById('expCopy').onclick=()=>{const t=document.getElementById('exportText');t.select();try{document.execCommand('copy');}catch(e){}const b=document.getElementById('expCopy');b.textContent='Kopiert ✓';setTimeout(()=>b.textContent='Kopieren',1200);};
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=e=>e.target.closest('.overlay').classList.remove('open'));
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
 
-  Object.entries(perLayer).forEach(([name,data])=>{
-    const color=new THREE.Color((parsed.layers[name]||{}).color||'#c2ccd8');
-    const vis=layerState[name]!==false;
-    if(data.line.length){
-      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.line,3));
-      const lm=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color}));
-      lm.visible=vis&&showLines;lm.userData={layer:name,kind:'line'};modelGroup.add(lm);
-    }
-    if(data.wall.length){
-      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.wall,3));g.computeVertexNormals();
-      const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,transparent:true,opacity:0.55,roughness:0.7,side:THREE.DoubleSide}));
-      m.visible=vis;m.userData={layer:name,kind:'wall'};modelGroup.add(m);pickables.push(m);
-    }
-  });
-  scene.add(modelGroup);
-}
+// ============================================================
+//  Kamera / Orbit
+// ============================================================
+const target=new THREE.Vector3(0,3,0);
+let radius=90,theta=-0.9,phi=1.0;
+function applyCam(){const rp=radius*Math.sin(phi);camera.position.set(target.x+rp*Math.sin(theta),target.y+radius*Math.cos(phi),target.z+rp*Math.cos(theta));camera.lookAt(target);}
+let HOME={radius:90,theta:-0.9,phi:1.0,tx:0,ty:3,tz:0};
+function fitCamera(size){ radius=Math.max(40,size*1.4); HOME.radius=radius; target.set(mode==='demo'?-3:0,3,0); HOME.tx=target.x;HOME.ty=target.y;HOME.tz=target.z; applyCam(); }
+applyCam();
+let dragging=false,panning=false,lx=0,ly=0;
+canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointerup',()=>dragging=false);
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointermove',e=>{ if(!dragging){canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
+  const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
+  if(panning){const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);}
+  else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));} applyCam(); });
+canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(8,Math.min(400,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
+document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.theta;phi=HOME.phi;target.set(HOME.tx,HOME.ty,HOME.tz);applyCam();};
 
-// ---------- Datei laden ----------
-function fitCamera(){
-  const size=Math.max(parsed.bounds.maxX-parsed.bounds.minX,parsed.bounds.maxY-parsed.bounds.minY)*transform.s;
-  radius=Math.max(30,size*1.2);HOME.radius=radius;target.set(0,0,0);applyCam();
+// ============================================================
+//  DXF/DWG Upload
+// ============================================================
+function setUIMode(m){ mode=m; document.getElementById('demoFilters').style.display=(m==='demo')?'':'none'; document.getElementById('dxfFilters').style.display=(m==='dxf')?'':'none'; }
+const MEDIA_RE=/HEIZ|WASSER|LUEFT|LÜFT|ELEKTRO|DRUCK|WAERME|WÄRME|KAELTE|KÄLTE|MEDIEN|LEITUNG|KABEL|ROHR/i;
+function tx(x){return (x-transform.cx)*transform.s;} function tz(y){return -(y-transform.cy)*transform.s;}
+function buildDXF(){
+  if(dxfGroup){scene.remove(dxfGroup);dxfGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+  dxfMeshes.length=0; dxfGroup=new THREE.Group(); scene.add(dxfGroup);
+  const H=parseFloat(document.getElementById('extrude').value); const showLines=document.getElementById('showLines').checked;
+  const per={}; const L=n=>{if(!per[n])per[n]={line:[],wall:[],media:MEDIA_RE.test(n)};return per[n];};
+  function seg(n,x1,y1,x2,y2){const a=[tx(x1),0,tz(y1)],b=[tx(x2),0,tz(y2)],o=L(n); const yb=o.media?4:0;
+    o.line.push(a[0],yb,a[2],b[0],yb,b[2]);
+    if(H>0&&!o.media){o.wall.push(a[0],0,a[2],b[0],0,b[2],b[0],H,b[2], a[0],0,a[2],b[0],H,b[2],a[0],H,a[2]);}}
+  function circ(n,cx,cy,r,a0,a1){const p=[],N=40,s=(a0||0)*Math.PI/180,e=(a1==null?360:a1)*Math.PI/180,sp=(e<s?e+2*Math.PI:e)-s;for(let i=0;i<=N;i++){const a=s+sp*i/N;p.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}for(let i=0;i<p.length-1;i++)seg(n,p[i][0],p[i][1],p[i+1][0],p[i+1][1]);}
+  parsed.entities.forEach(en=>{ if(en.type==='LINE')seg(en.layer,en.x1,en.y1,en.x2,en.y2);
+    else if(en.type==='POLYLINE'){const v=en.verts;for(let i=0;i<v.length-1;i++)seg(en.layer,v[i].x,v[i].y,v[i+1].x,v[i+1].y);if(en.closed&&v.length>2)seg(en.layer,v[v.length-1].x,v[v.length-1].y,v[0].x,v[0].y);}
+    else if(en.type==='CIRCLE')circ(en.layer,en.cx,en.cy,en.r,0,360);
+    else if(en.type==='ARC')circ(en.layer,en.cx,en.cy,en.r,en.a0,en.a1);
+    else if(en.type==='3DFACE'){const q=en.pts;seg(en.layer,q[0].x,q[0].y,q[1].x,q[1].y);seg(en.layer,q[1].x,q[1].y,q[2].x,q[2].y);seg(en.layer,q[2].x,q[2].y,q[3].x,q[3].y);}});
+  Object.entries(per).forEach(([name,data])=>{ const color=new THREE.Color((parsed.layers[name]||{}).color||'#c2ccd8'); const vis=layerOn[name]!==false;
+    if(data.line.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.line,3));const lm=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color}));lm.visible=vis&&(showLines||data.media);lm.userData={layer:name,kind:'line',_col:'#'+color.getHexString()};dxfGroup.add(lm);if(data.media)dxfMeshes.push(lm);}
+    if(data.wall.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.wall,3));g.computeVertexNormals();const m=new THREE.Mesh(g,mat(color,{rough:0.7,opacity:0.55}));m.visible=vis;m.userData={layer:name,kind:'wall',_col:'#'+color.getHexString()};dxfGroup.add(m);dxfMeshes.push(m);}});
 }
-function renderLayers(){
-  const box=document.getElementById('layers');box.innerHTML='';
-  const counts={};parsed.entities.forEach(e=>counts[e.layer]=(counts[e.layer]||0)+1);
-  Object.keys(parsed.layers).sort().forEach(name=>{
-    if(layerState[name]===undefined)layerState[name]=true;
-    const row=document.createElement('label');row.className='layer';
-    row.innerHTML='<input type="checkbox" '+(layerState[name]?'checked':'')+'><span class="swatch" style="background:'+parsed.layers[name].color+'"></span><span class="name" title="'+name+'">'+name+'</span><span class="count">'+(counts[name]||0)+'</span>';
-    row.querySelector('input').addEventListener('change',e=>{layerState[name]=e.target.checked;applyLayerVisibility();if(selected===name&&!e.target.checked)deselect();});
-    box.appendChild(row);
-  });
+function renderLayers(){const box=document.getElementById('layers');box.innerHTML='';const cnt={};parsed.entities.forEach(e=>cnt[e.layer]=(cnt[e.layer]||0)+1);
+  Object.keys(parsed.layers).sort().forEach(name=>{ if(layerOn[name]===undefined)layerOn[name]=true; const med=MEDIA_RE.test(name);
+    const row=document.createElement('label');row.className='flt';
+    row.innerHTML='<input type="checkbox" '+(layerOn[name]?'checked':'')+'><span class="swatch" style="background:'+parsed.layers[name].color+'"></span><span class="name" title="'+name+'">'+name+(med?' 〜':'')+'</span><span class="count">'+(cnt[name]||0)+'</span>';
+    row.querySelector('input').addEventListener('change',e=>{layerOn[name]=e.target.checked;applyLayerVis();if(selected&&!selected.visible)deselect();});
+    box.appendChild(row);});}
+function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const med=MEDIA_RE.test(o.userData.layer);o.visible=(o.userData.kind==='line')?(vis&&(showLines||med)):vis;});}
+function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
+  clearScene(); parsed=m; const b=m.bounds; const size=Math.max(b.maxX-b.minX,b.maxY-b.minY)||1; transform={cx:(b.minX+b.maxX)/2,cy:(b.minY+b.maxY)/2,s:60/size};
+  Object.keys(layerOn).forEach(k=>delete layerOn[k]); setUIMode('dxf'); buildDXF(); renderLayers(); fitCamera(60);
+  document.getElementById('drop').classList.add('hide'); document.getElementById('fileName').textContent=name||'';
+  document.getElementById('stats').innerHTML='<b>'+m.stats.entities+'</b> Objekte · <b>'+m.stats.layers+'</b> Layer';
+  toast('Modell geladen: '+m.stats.entities+' Objekte, '+m.stats.layers+' Layer');
 }
-function applyLayerVisibility(){
-  const showLines=document.getElementById('showLines').checked;
-  modelGroup&&modelGroup.children.forEach(o=>{
-    const vis=layerState[o.userData.layer]!==false;
-    o.visible=(o.userData.kind==='line')?(vis&&showLines):vis;
-  });
-}
-function loadDXFText(text,name){
-  try{
-    parsed=DXF.parse(text);
-  }catch(err){toast('Datei konnte nicht gelesen werden: '+err.message,true);return;}
-  if(!parsed.entities.length){toast('Keine unterstützten Geometrie-Elemente in der Datei gefunden.',true);return;}
-  const b=parsed.bounds;
-  const size=Math.max(b.maxX-b.minX,b.maxY-b.minY)||1;
-  transform={cx:(b.minX+b.maxX)/2,cy:(b.minY+b.maxY)/2,s:60/size};
-  Object.keys(layerState).forEach(k=>delete layerState[k]);
-  buildModel();renderLayers();fitCamera();
-  document.getElementById('drop').classList.add('hide');
-  document.getElementById('fileName').textContent=name||'';
-  document.getElementById('stats').innerHTML='<b>'+parsed.stats.entities+'</b> Objekte · <b>'+parsed.stats.layers+'</b> Layer';
-  toast('Modell geladen: '+parsed.stats.entities+' Objekte, '+parsed.stats.layers+' Layer');
-}
+async function handleFile(file){const n=file.name.toLowerCase();
+  if(n.endsWith('.dxf')){loadDXFText(await file.text(),file.name);}
+  else if(n.endsWith('.dwg')){toast('DWG wird umgewandelt …',false,true);
+    try{const fd=new FormData();fd.append('file',file);const res=await fetch('api/convert',{method:'POST',body:fd});if(!res.ok){throw new Error((await res.text().catch(()=>''))||('Server '+res.status));}loadDXFText(await res.text(),file.name);}
+    catch(err){toast('DWG-Umwandlung fehlgeschlagen. Läuft der Konverter? '+err.message,true);}}
+  else toast('Bitte eine .dxf- oder .dwg-Datei wählen.',true);}
+document.getElementById('extrude').addEventListener('input',()=>{if(mode==='dxf'&&parsed){buildDXF();applyLayerVis();}});
+document.getElementById('showLines').addEventListener('change',applyLayerVis);
 
-async function handleFile(file){
-  const name=file.name.toLowerCase();
-  if(name.endsWith('.dxf')){
-    const text=await file.text();loadDXFText(text,file.name);
-  }else if(name.endsWith('.dwg')){
-    toast('DWG wird umgewandelt …',false,true);
-    try{
-      const fd=new FormData();fd.append('file',file);
-      const res=await fetch('api/convert',{method:'POST',body:fd});
-      if(!res.ok){const msg=await res.text().catch(()=>'');throw new Error(msg||('Server '+res.status));}
-      const text=await res.text();loadDXFText(text,file.name);
-    }catch(err){
-      toast('DWG-Umwandlung fehlgeschlagen. Läuft der Konverter-Dienst? '+err.message,true);
-    }
-  }else{toast('Bitte eine .dxf- oder .dwg-Datei wählen.',true);}
-}
-
-// ---------- UI ----------
-function toast(msg,err,spin){
-  const t=document.getElementById('toast');
-  t.className='show'+(err?' err':'');
-  t.innerHTML=(spin?'<span class="spin"></span>':'')+msg;
-  clearTimeout(toast._t);
-  if(!spin)toast._t=setTimeout(()=>t.classList.remove('show'),err?6000:3500);
-}
+// ============================================================
+//  UI-Verdrahtung
+// ============================================================
+function toast(msg,err,spin){const t=document.getElementById('toast');t.className='show'+(err?' err':'');t.innerHTML=(spin?'<span class="spin"></span>':'')+msg;clearTimeout(toast._t);if(!spin)toast._t=setTimeout(()=>t.classList.remove('show'),err?6000:3200);}
 const fileInput=document.getElementById('file');
 ['btnOpen','btnOpen2'].forEach(id=>document.getElementById(id).onclick=()=>fileInput.click());
 fileInput.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);fileInput.value='';};
-document.getElementById('extrude').addEventListener('input',()=>{if(parsed){buildModel();applyLayerVisibility();}});
-document.getElementById('showLines').addEventListener('change',applyLayerVisibility);
-
-// Drag & Drop
+['btnDemo','btnDemo2'].forEach(id=>document.getElementById(id).onclick=buildDemo);
 const stage=document.getElementById('stage'),drop=document.getElementById('drop');
+document.getElementById('btnOpen').addEventListener('dblclick',()=>drop.classList.remove('hide'));
 ['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
-['dragleave','drop'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');if(ev==='drop'&&parsed)drop.classList.add('hide');}));
+['dragleave','drop'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');if(ev==='drop')drop.classList.add('hide');}));
 stage.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
 
-// Demo
-document.getElementById('btnDemo').onclick=()=>loadDXFText(DEMO_DXF,'beispiel.dxf');
-
-// ---------- Render ----------
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
 (function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
 
-// ---------- eingebettetes Beispiel (kleiner Hallen-Grundriss) ----------
-const DEMO_DXF=`0
-SECTION
-2
-TABLES
-0
-TABLE
-2
-LAYER
-0
-LAYER
-2
-AUSSENWAND
-62
-7
-0
-LAYER
-2
-INNENWAND
-62
-8
-0
-LAYER
-2
-TUEREN
-62
-8
-0
-LAYER
-2
-FENSTER
-62
-4
-0
-LAYER
-2
-STUETZEN
-62
-3
-0
-LAYER
-2
-TRAEGER
-62
-9
-0
-LAYER
-2
-MASCHINEN
-62
-6
-0
-LAYER
-2
-HEIZUNG
-62
-1
-0
-LAYER
-2
-WASSER
-62
-5
-0
-LAYER
-2
-LUEFTUNG
-62
-4
-0
-LAYER
-2
-ELEKTRO
-62
-2
-0
-ENDTAB
-0
-ENDSEC
-0
-SECTION
-2
-ENTITIES
-0
-LWPOLYLINE
-8
-AUSSENWAND
-90
-4
-70
-1
-10
-0
-20
-0
-10
-60
-20
-0
-10
-60
-20
-36
-10
-0
-20
-36
-0
-LINE
-8
-INNENWAND
-10
-44
-20
-0
-30
-0
-11
-44
-21
-36
-31
-0
-0
-LINE
-8
-INNENWAND
-10
-44
-20
-12
-30
-0
-11
-60
-21
-12
-31
-0
-0
-LINE
-8
-INNENWAND
-10
-44
-20
-24
-30
-0
-11
-60
-21
-24
-31
-0
-0
-LINE
-8
-INNENWAND
-10
-52
-20
-24
-30
-0
-11
-52
-21
-36
-31
-0
-0
-ARC
-8
-TUEREN
-10
-44
-20
-3
-40
-2.2
-50
-0
-51
-90
-0
-LINE
-8
-TUEREN
-10
-44
-20
-3
-30
-0
-11
-44
-21
-5.2
-31
-0
-0
-ARC
-8
-TUEREN
-10
-44
-20
-15
-40
-2.2
-50
-0
-51
-90
-0
-LINE
-8
-TUEREN
-10
-44
-20
-15
-30
-0
-11
-44
-21
-17.2
-31
-0
-0
-ARC
-8
-TUEREN
-10
-44
-20
-27
-40
-2.2
-50
-0
-51
-90
-0
-LINE
-8
-TUEREN
-10
-44
-20
-27
-30
-0
-11
-44
-21
-29.2
-31
-0
-0
-ARC
-8
-TUEREN
-10
-50
-20
-0
-40
-3
-50
-0
-51
-90
-0
-LINE
-8
-TUEREN
-10
-50
-20
-0
-30
-0
-11
-50
-21
-3
-31
-0
-0
-ARC
-8
-TUEREN
-10
-4
-20
-0
-40
-4
-50
-0
-51
-90
-0
-LINE
-8
-TUEREN
-10
-4
-20
-0
-30
-0
-11
-4
-21
-4
-31
-0
-0
-LINE
-8
-FENSTER
-10
-59.6
-20
-3
-30
-0
-11
-59.6
-21
-6
-31
-0
-0
-LINE
-8
-FENSTER
-10
-59.6
-20
-15
-30
-0
-11
-59.6
-21
-18
-31
-0
-0
-LINE
-8
-FENSTER
-10
-59.6
-20
-27
-30
-0
-11
-59.6
-21
-30
-31
-0
-0
-LINE
-8
-FENSTER
-10
-6
-20
-0.4
-30
-0
-11
-10
-21
-0.4
-31
-0
-0
-LINE
-8
-FENSTER
-10
-16
-20
-0.4
-30
-0
-11
-20
-21
-0.4
-31
-0
-0
-LINE
-8
-FENSTER
-10
-26
-20
-0.4
-30
-0
-11
-30
-21
-0.4
-31
-0
-0
-LINE
-8
-FENSTER
-10
-34
-20
-0.4
-30
-0
-11
-38
-21
-0.4
-31
-0
-0
-LINE
-8
-FENSTER
-10
-8
-20
-35.6
-30
-0
-11
-12
-21
-35.6
-31
-0
-0
-LINE
-8
-FENSTER
-10
-20
-20
-35.6
-30
-0
-11
-24
-21
-35.6
-31
-0
-0
-LINE
-8
-FENSTER
-10
-32
-20
-35.6
-30
-0
-11
-36
-21
-35.6
-31
-0
-0
-CIRCLE
-8
-STUETZEN
-10
-8
-20
-6
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-8
-20
-18
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-8
-20
-30
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-16
-20
-6
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-16
-20
-18
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-16
-20
-30
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-24
-20
-6
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-24
-20
-18
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-24
-20
-30
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-32
-20
-6
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-32
-20
-18
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-32
-20
-30
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-40
-20
-6
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-40
-20
-18
-40
-0.4
-0
-CIRCLE
-8
-STUETZEN
-10
-40
-20
-30
-40
-0.4
-0
-LINE
-8
-TRAEGER
-10
-2
-20
-6
-30
-0
-11
-42
-21
-6
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-2
-20
-18
-30
-0
-11
-42
-21
-18
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-2
-20
-30
-30
-0
-11
-42
-21
-30
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-8
-20
-4
-30
-0
-11
-8
-21
-32
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-16
-20
-4
-30
-0
-11
-16
-21
-32
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-24
-20
-4
-30
-0
-11
-24
-21
-32
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-32
-20
-4
-30
-0
-11
-32
-21
-32
-31
-0
-0
-LINE
-8
-TRAEGER
-10
-40
-20
-4
-30
-0
-11
-40
-21
-32
-31
-0
-0
-LWPOLYLINE
-8
-MASCHINEN
-90
-4
-70
-1
-10
-5
-20
-9
-10
-12
-20
-9
-10
-12
-20
-13
-10
-5
-20
-13
-0
-LWPOLYLINE
-8
-MASCHINEN
-90
-4
-70
-1
-10
-18
-20
-7
-10
-24
-20
-7
-10
-24
-20
-12
-10
-18
-20
-12
-0
-LWPOLYLINE
-8
-MASCHINEN
-90
-4
-70
-1
-10
-28
-20
-20
-10
-37
-20
-20
-10
-37
-20
-27
-10
-28
-20
-27
-0
-LWPOLYLINE
-8
-MASCHINEN
-90
-4
-70
-1
-10
-6
-20
-24
-10
-12
-20
-24
-10
-12
-20
-30
-10
-6
-20
-30
-0
-LWPOLYLINE
-8
-MASCHINEN
-90
-4
-70
-1
-10
-34
-20
-4
-10
-39
-20
-4
-10
-39
-20
-9
-10
-34
-20
-9
-0
-CIRCLE
-8
-MASCHINEN
-10
-32.5
-20
-23.5
-40
-2.2
-0
-CIRCLE
-8
-MASCHINEN
-10
-9
-20
-27
-40
-1.6
-0
-LINE
-8
-HEIZUNG
-10
-2
-20
-34
-30
-0
-11
-42
-21
-34
-31
-0
-0
-LINE
-8
-HEIZUNG
-10
-20
-20
-34
-30
-0
-11
-20
-21
-4
-31
-0
-0
-LINE
-8
-WASSER
-10
-2
-20
-32
-30
-0
-11
-42
-21
-32
-31
-0
-0
-LINE
-8
-WASSER
-10
-10
-20
-32
-30
-0
-11
-10
-21
-4
-31
-0
-0
-LWPOLYLINE
-8
-LUEFTUNG
-90
-4
-70
-1
-10
-2
-20
-16.5
-10
-42
-20
-16.5
-10
-42
-20
-18.1
-10
-2
-20
-18.1
-0
-LWPOLYLINE
-8
-LUEFTUNG
-90
-4
-70
-1
-10
-30
-20
-4
-10
-31.6
-20
-4
-10
-31.6
-20
-16
-10
-30
-20
-16
-0
-LINE
-8
-ELEKTRO
-10
-2
-20
-2.5
-30
-0
-11
-42
-21
-2.5
-31
-0
-0
-LINE
-8
-ELEKTRO
-10
-36
-20
-2.5
-30
-0
-11
-36
-21
-32
-31
-0
-0
-ENDSEC
-0
-EOF`;
+// Start: Beispiel laden
+buildDemo();
 </script>
 </body>
 </html>
