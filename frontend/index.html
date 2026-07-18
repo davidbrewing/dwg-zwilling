@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digitaler Zwilling – DWG/DXF Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="dxf.js"></script>
+<style>
+  :root{
+    --bg:#0f1720;--panel:#161f2b;--panel2:#1d2836;--line:#2b3a4d;
+    --txt:#e6edf3;--muted:#93a4b8;--accent:#4aa3ff;--ok:#33a06f;--warn:#e08a2b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);overflow:hidden}
+  #app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:56px 1fr;height:100vh}
+  #topbar{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+  .logo .dot{width:11px;height:11px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .logo .sub{color:var(--muted);font-size:12px;font-weight:400}
+  .spacer{flex:1}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 13px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s}
+  .btn:hover{border-color:var(--accent);background:#20303f}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
+  .btn.primary:hover{background:#63b1ff}
+  #sidebar{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:16px 14px}
+  .sec-title{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:14px 0 9px}
+  .sec-title:first-child{margin-top:0}
+  .ctrl{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0}
+  .ctrl input[type=range]{width:120px;accent-color:var(--accent)}
+  .layer{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;cursor:pointer;user-select:none}
+  .layer:hover{background:var(--panel2)}
+  .layer input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+  .swatch{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(255,255,255,.15)}
+  .layer .name{font-size:12.5px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .layer .count{font-size:11px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:12.5px;line-height:1.6;padding:6px 2px}
+  #stage{position:relative;overflow:hidden}
+  #c{display:block;width:100%;height:100%}
+  #drop{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;background:rgba(15,23,32,.75);z-index:5;transition:.15s}
+  #drop.hide{opacity:0;pointer-events:none}
+  #drop.hot .zone{border-color:var(--accent);background:rgba(74,163,255,.08)}
+  #drop .zone{border:2px dashed var(--line);border-radius:16px;padding:46px 60px;max-width:520px}
+  #drop h1{font-size:20px;margin-bottom:8px}
+  #drop p{color:var(--muted);font-size:13.5px;line-height:1.6;max-width:430px;margin:0 auto}
+  #drop .formats{margin-top:10px;font-size:12px;color:var(--muted)}
+  #drop .row{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap}
+  #hud{position:absolute;left:14px;bottom:12px;font-size:11px;color:var(--muted);background:rgba(15,23,32,.6);border:1px solid var(--line);padding:7px 11px;border-radius:8px;line-height:1.5;backdrop-filter:blur(4px)}
+  #hud b{color:var(--txt)}
+  #toast{position:absolute;top:14px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:11px 16px;font-size:13px;display:none;align-items:center;gap:10px;z-index:8;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  #toast.show{display:flex}
+  #toast.err{border-color:#c0563d}
+  .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  #info{position:absolute;top:14px;right:14px;width:300px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(340px);transition:transform .25s;overflow:hidden}
+  #info.open{transform:translateX(0)}
+  .info-head{padding:14px 16px;border-bottom:1px solid var(--line);position:relative}
+  .info-head .cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .info-head h2{font-size:16px;margin-top:5px}
+  .info-head .close{position:absolute;top:11px;right:12px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
+  .info-b{padding:6px 16px 14px}
+  .row2{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:12.5px;border-bottom:1px dotted #24313f}
+  .row2:last-child{border-bottom:none}
+  .row2 .k{color:var(--muted)}
+  .note{font-size:11.5px;color:var(--muted);background:rgba(74,163,255,.08);border:1px solid rgba(74,163,255,.25);border-radius:8px;padding:9px 11px;line-height:1.5;margin:8px 16px 14px}
+  input[type=file]{display:none}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo"><span class="dot"></span> Digitaler Zwilling <span class="sub">· DWG/DXF Viewer</span></div>
+    <div class="spacer"></div>
+    <span id="fileName" style="font-size:12.5px;color:var(--muted)"></span>
+    <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
+    <button class="btn primary" id="btnReset">⟲ Ansicht</button>
+    <input type="file" id="file" accept=".dxf,.dwg">
+  </div>
+
+  <div id="sidebar">
+    <div class="sec-title">Darstellung</div>
+    <div class="ctrl"><label for="extrude">Höhe (Extrusion)</label><input type="range" id="extrude" min="0" max="24" value="6" step="0.5"></div>
+    <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
+
+    <div class="sec-title">Layer</div>
+    <div id="layers"><div class="empty">Noch keine Datei geladen.</div></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="c"></canvas>
+
+    <div id="drop">
+      <div class="zone">
+        <h1>DWG- oder DXF-Datei hochladen</h1>
+        <p>Ziehe eine Zeichnung hierher oder wähle eine Datei. Das Tool erzeugt daraus ein drehbares 3D-Modell, das nach Layern gefiltert und angeklickt werden kann.</p>
+        <div class="formats">Unterstützt: <b>.dxf</b> (direkt im Browser) · <b>.dwg</b> (Umwandlung über den Konverter-Dienst)</div>
+        <div class="row">
+          <button class="btn primary" id="btnOpen2">Datei auswählen</button>
+          <button class="btn" id="btnDemo">Beispiel ansehen</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="hud">
+      <b>Steuerung:</b> Ziehen = drehen · Mausrad = zoomen · Rechte Maustaste = verschieben<br>
+      <span id="stats">–</span>
+    </div>
+
+    <div id="info">
+      <div class="info-head">
+        <button class="close" id="infoClose">×</button>
+        <div class="cat"><span class="swatch" id="iSwatch"></span><span id="iCat">Layer</span></div>
+        <h2 id="iName">–</h2>
+      </div>
+      <div class="info-b" id="iBody"></div>
+      <div class="note">Hinweis: In dieser Ausbaustufe ist die Auswahl-Einheit der <b>Layer</b>. Das Hinterlegen von Fachdaten (Statik, Energie, Wartung) je Bauteil folgt im nächsten Schritt über das semantische Modell (IFC).</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Setup ----------
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0f1720);
+const camera=new THREE.PerspectiveCamera(48,1,0.1,4000);
+scene.add(new THREE.HemisphereLight(0xbcd3ef,0x0e1620,0.9));
+const dir=new THREE.DirectionalLight(0xffffff,0.7); dir.position.set(40,70,30); scene.add(dir);
+const grid=new THREE.GridHelper(200,40,0x2b3a4d,0x1b2735); grid.position.y=-0.05; scene.add(grid);
+
+let modelGroup=null;      // aktuelle Three-Gruppe
+let parsed=null;          // Parser-Ergebnis
+let transform=null;       // {cx,cy,s}
+const layerState={};      // name -> visible
+const pickables=[];       // Wand-Meshes für Klick
+
+// ---------- Kamera / Orbit ----------
+const target=new THREE.Vector3(0,0,0);
+let radius=90,theta=-0.9,phi=1.0;
+function applyCam(){
+  const rp=radius*Math.sin(phi);
+  camera.position.set(target.x+rp*Math.sin(theta),target.y+radius*Math.cos(phi),target.z+rp*Math.cos(theta));
+  camera.lookAt(target);
+}
+const HOME={radius:90,theta:-0.9,phi:1.0};
+applyCam();
+let dragging=false,panning=false,lx=0,ly=0,moved=false;
+canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointerup',()=>{dragging=false;});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointermove',e=>{
+  if(!dragging){hover(e);return;}
+  moved=true;
+  const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
+  if(panning){
+    const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();
+    target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);
+  }else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));}
+  applyCam();
+});
+canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(6,Math.min(600,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
+document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.theta;phi=HOME.phi;target.set(0,0,0);applyCam();};
+
+// ---------- Auswahl ----------
+const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();
+let selected=null;
+function pick(e){
+  const r=canvas.getBoundingClientRect();
+  ptr.x=((e.clientX-r.left)/r.width)*2-1;ptr.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,camera);
+  const hit=ray.intersectObjects(pickables.filter(m=>m.visible),false);
+  return hit.length?hit[0].object:null;
+}
+function hover(e){canvas.style.cursor=pick(e)?'pointer':'default';}
+canvas.addEventListener('click',e=>{if(moved)return;const o=pick(e);o?selectLayer(o.userData.layer):deselect();});
+function selectLayer(name){
+  selected=name;
+  const info=parsed.layers[name]||{color:'#c2ccd8'};
+  const ents=parsed.entities.filter(x=>x.layer===name);
+  const types={};ents.forEach(x=>types[x.type]=(types[x.type]||0)+1);
+  document.getElementById('iSwatch').style.background=info.color;
+  document.getElementById('iName').textContent=name;
+  let h='';
+  h+='<div class="row2"><span class="k">Objekte</span><span>'+ents.length+'</span></div>';
+  Object.entries(types).forEach(([t,n])=>{h+='<div class="row2"><span class="k">· '+t+'</span><span>'+n+'</span></div>';});
+  h+='<div class="row2"><span class="k">Farbe</span><span>'+info.color+'</span></div>';
+  document.getElementById('iBody').innerHTML=h;
+  document.getElementById('info').classList.add('open');
+}
+function deselect(){selected=null;document.getElementById('info').classList.remove('open');}
+document.getElementById('infoClose').onclick=deselect;
+
+// ---------- Geometrie-Aufbau ----------
+function tx(x){return (x-transform.cx)*transform.s;}
+function tz(y){return -(y-transform.cy)*transform.s;}
+
+function buildModel(){
+  if(modelGroup){scene.remove(modelGroup);modelGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+  pickables.length=0;
+  modelGroup=new THREE.Group();
+  const H=parseFloat(document.getElementById('extrude').value);
+  const showLines=document.getElementById('showLines').checked;
+
+  // pro Layer sammeln
+  const perLayer={};
+  function L(name){if(!perLayer[name])perLayer[name]={line:[],wall:[]};return perLayer[name];}
+  function seg(name,x1,y1,x2,y2){
+    const a=[tx(x1),0,tz(y1)],b=[tx(x2),0,tz(y2)];
+    L(name).line.push(a[0],a[1],a[2],b[0],b[1],b[2]);
+    if(H>0){
+      const w=L(name).wall;
+      // Quad (2 Dreiecke): a, b, b+H, a+H
+      const ax=a[0],az=a[2],bx=b[0],bz=b[2];
+      w.push(ax,0,az, bx,0,bz, bx,H,bz,  ax,0,az, bx,H,bz, ax,H,az);
+    }
+  }
+  function circlePts(cx,cy,r,a0,a1){
+    const pts=[],n=48,s=a0*Math.PI/180,e=a1*Math.PI/180,span=(e<s?e+2*Math.PI:e)-s;
+    for(let i=0;i<=n;i++){const a=s+span*i/n;pts.push([cx+r*Math.cos(a),cy+r*Math.sin(a)]);}
+    return pts;
+  }
+  parsed.entities.forEach(ent=>{
+    if(ent.type==='LINE'){seg(ent.layer,ent.x1,ent.y1,ent.x2,ent.y2);}
+    else if(ent.type==='POLYLINE'){
+      const v=ent.verts;for(let i=0;i<v.length-1;i++)seg(ent.layer,v[i].x,v[i].y,v[i+1].x,v[i+1].y);
+      if(ent.closed&&v.length>2)seg(ent.layer,v[v.length-1].x,v[v.length-1].y,v[0].x,v[0].y);
+    }
+    else if(ent.type==='CIRCLE'){const p=circlePts(ent.cx,ent.cy,ent.r,0,360);for(let i=0;i<p.length-1;i++)seg(ent.layer,p[i][0],p[i][1],p[i+1][0],p[i+1][1]);}
+    else if(ent.type==='ARC'){const p=circlePts(ent.cx,ent.cy,ent.r,ent.a0,ent.a1);for(let i=0;i<p.length-1;i++)seg(ent.layer,p[i][0],p[i][1],p[i+1][0],p[i+1][1]);}
+    else if(ent.type==='3DFACE'){const q=ent.pts;seg(ent.layer,q[0].x,q[0].y,q[1].x,q[1].y);seg(ent.layer,q[1].x,q[1].y,q[2].x,q[2].y);seg(ent.layer,q[2].x,q[2].y,q[3].x,q[3].y);}
+  });
+
+  Object.entries(perLayer).forEach(([name,data])=>{
+    const color=new THREE.Color((parsed.layers[name]||{}).color||'#c2ccd8');
+    const vis=layerState[name]!==false;
+    if(data.line.length){
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.line,3));
+      const lm=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color}));
+      lm.visible=vis&&showLines;lm.userData={layer:name,kind:'line'};modelGroup.add(lm);
+    }
+    if(data.wall.length){
+      const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.wall,3));g.computeVertexNormals();
+      const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color,transparent:true,opacity:0.55,roughness:0.7,side:THREE.DoubleSide}));
+      m.visible=vis;m.userData={layer:name,kind:'wall'};modelGroup.add(m);pickables.push(m);
+    }
+  });
+  scene.add(modelGroup);
+}
+
+// ---------- Datei laden ----------
+function fitCamera(){
+  const size=Math.max(parsed.bounds.maxX-parsed.bounds.minX,parsed.bounds.maxY-parsed.bounds.minY)*transform.s;
+  radius=Math.max(30,size*1.2);HOME.radius=radius;target.set(0,0,0);applyCam();
+}
+function renderLayers(){
+  const box=document.getElementById('layers');box.innerHTML='';
+  const counts={};parsed.entities.forEach(e=>counts[e.layer]=(counts[e.layer]||0)+1);
+  Object.keys(parsed.layers).sort().forEach(name=>{
+    if(layerState[name]===undefined)layerState[name]=true;
+    const row=document.createElement('label');row.className='layer';
+    row.innerHTML='<input type="checkbox" '+(layerState[name]?'checked':'')+'><span class="swatch" style="background:'+parsed.layers[name].color+'"></span><span class="name" title="'+name+'">'+name+'</span><span class="count">'+(counts[name]||0)+'</span>';
+    row.querySelector('input').addEventListener('change',e=>{layerState[name]=e.target.checked;applyLayerVisibility();if(selected===name&&!e.target.checked)deselect();});
+    box.appendChild(row);
+  });
+}
+function applyLayerVisibility(){
+  const showLines=document.getElementById('showLines').checked;
+  modelGroup&&modelGroup.children.forEach(o=>{
+    const vis=layerState[o.userData.layer]!==false;
+    o.visible=(o.userData.kind==='line')?(vis&&showLines):vis;
+  });
+}
+function loadDXFText(text,name){
+  try{
+    parsed=DXF.parse(text);
+  }catch(err){toast('Datei konnte nicht gelesen werden: '+err.message,true);return;}
+  if(!parsed.entities.length){toast('Keine unterstützten Geometrie-Elemente in der Datei gefunden.',true);return;}
+  const b=parsed.bounds;
+  const size=Math.max(b.maxX-b.minX,b.maxY-b.minY)||1;
+  transform={cx:(b.minX+b.maxX)/2,cy:(b.minY+b.maxY)/2,s:60/size};
+  Object.keys(layerState).forEach(k=>delete layerState[k]);
+  buildModel();renderLayers();fitCamera();
+  document.getElementById('drop').classList.add('hide');
+  document.getElementById('fileName').textContent=name||'';
+  document.getElementById('stats').innerHTML='<b>'+parsed.stats.entities+'</b> Objekte · <b>'+parsed.stats.layers+'</b> Layer';
+  toast('Modell geladen: '+parsed.stats.entities+' Objekte, '+parsed.stats.layers+' Layer');
+}
+
+async function handleFile(file){
+  const name=file.name.toLowerCase();
+  if(name.endsWith('.dxf')){
+    const text=await file.text();loadDXFText(text,file.name);
+  }else if(name.endsWith('.dwg')){
+    toast('DWG wird umgewandelt …',false,true);
+    try{
+      const fd=new FormData();fd.append('file',file);
+      const res=await fetch('api/convert',{method:'POST',body:fd});
+      if(!res.ok){const msg=await res.text().catch(()=>'');throw new Error(msg||('Server '+res.status));}
+      const text=await res.text();loadDXFText(text,file.name);
+    }catch(err){
+      toast('DWG-Umwandlung fehlgeschlagen. Läuft der Konverter-Dienst? '+err.message,true);
+    }
+  }else{toast('Bitte eine .dxf- oder .dwg-Datei wählen.',true);}
+}
+
+// ---------- UI ----------
+function toast(msg,err,spin){
+  const t=document.getElementById('toast');
+  t.className='show'+(err?' err':'');
+  t.innerHTML=(spin?'<span class="spin"></span>':'')+msg;
+  clearTimeout(toast._t);
+  if(!spin)toast._t=setTimeout(()=>t.classList.remove('show'),err?6000:3500);
+}
+const fileInput=document.getElementById('file');
+['btnOpen','btnOpen2'].forEach(id=>document.getElementById(id).onclick=()=>fileInput.click());
+fileInput.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);fileInput.value='';};
+document.getElementById('extrude').addEventListener('input',()=>{if(parsed){buildModel();applyLayerVisibility();}});
+document.getElementById('showLines').addEventListener('change',applyLayerVisibility);
+
+// Drag & Drop
+const stage=document.getElementById('stage'),drop=document.getElementById('drop');
+['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');if(ev==='drop'&&parsed)drop.classList.add('hide');}));
+stage.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+
+// Demo
+document.getElementById('btnDemo').onclick=()=>loadDXFText(DEMO_DXF,'beispiel.dxf');
+
+// ---------- Render ----------
+function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+(function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
+
+// ---------- eingebettetes Beispiel (kleiner Hallen-Grundriss) ----------
+const DEMO_DXF=`0
+SECTION
+2
+TABLES
+0
+TABLE
+2
+LAYER
+0
+LAYER
+2
+AUSSENWAND
+62
+1
+0
+LAYER
+2
+INNENWAND
+62
+3
+0
+LAYER
+2
+STUETZEN
+62
+5
+0
+ENDTAB
+0
+ENDSEC
+0
+SECTION
+2
+ENTITIES
+0
+LWPOLYLINE
+8
+AUSSENWAND
+90
+4
+70
+1
+10
+0
+20
+0
+10
+40
+20
+0
+10
+40
+20
+24
+10
+0
+20
+24
+0
+LWPOLYLINE
+8
+INNENWAND
+90
+2
+70
+0
+10
+16
+20
+0
+10
+16
+20
+24
+0
+LINE
+8
+INNENWAND
+10
+16
+20
+12
+11
+40
+21
+12
+0
+CIRCLE
+8
+STUETZEN
+10
+8
+20
+6
+40
+0.4
+0
+CIRCLE
+8
+STUETZEN
+10
+8
+20
+18
+40
+0.4
+0
+CIRCLE
+8
+STUETZEN
+10
+28
+20
+6
+40
+0.4
+0
+CIRCLE
+8
+STUETZEN
+10
+28
+20
+18
+40
+0.4
+0
+ENDSEC
+0
+EOF`;
+</script>
+</body>
+</html>
