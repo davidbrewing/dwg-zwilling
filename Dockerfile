@@ -9,7 +9,7 @@ FROM node:20-bookworm-slim
 #     liefert das Kommandozeilen-Tool "dwg2dxf"
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git build-essential autoconf automake libtool pkg-config \
-      texinfo gperf perl ca-certificates curl \
+      texinfo gperf perl python3 ca-certificates curl \
  && curl -fsSL https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js -o /opt/three.min.js \
  && rm -rf /var/lib/apt/lists/*
 
