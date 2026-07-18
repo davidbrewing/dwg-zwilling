@@ -228,24 +228,23 @@ const hex = n => '#' + n.toString(16).padStart(6,'0');
 // ============================================================
 function fatal(msg){var s=document.getElementById('stage');if(s)s.insertAdjacentHTML('beforeend','<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px;color:#e6edf3;background:rgba(15,23,32,.94);z-index:20;font-size:15px;line-height:1.6">'+msg+'</div>');}
 if(typeof THREE==='undefined'){fatal('Die 3D-Bibliothek (three.min.js) konnte nicht geladen werden. Bitte einmal mit Strg+F5 neu laden. Bleibt es leer, ist die Datei auf dem Server nicht erreichbar.');throw new Error('THREE missing');}
-const canvas=document.getElementById('c');
 function makeRenderer(){
-  // Mehrere Varianten probieren – manche Treiber lehnen nur antialias/WebGL2 ab.
-  const tries=[{antialias:true},{antialias:false},{antialias:false,failIfMajorPerformanceCaveat:false},{antialias:false,powerPreference:'low-power',failIfMajorPerformanceCaveat:false}];
+  // Wichtig: KEINEN eigenen Canvas übergeben – three erzeugt je Versuch eine frische Fläche.
+  const errs=[];
+  const tries=[{antialias:true},{antialias:false},{antialias:false,failIfMajorPerformanceCaveat:false},{antialias:false,powerPreference:'low-power',failIfMajorPerformanceCaveat:false},{antialias:false,alpha:true,preserveDrawingBuffer:true,failIfMajorPerformanceCaveat:false}];
   for(let i=0;i<tries.length;i++){
-    try{ return new THREE.WebGLRenderer(Object.assign({canvas:canvas},tries[i])); }
-    catch(e){ console.warn('WebGL-Versuch '+(i+1)+' fehlgeschlagen:', e&&e.message); }
+    try{ return {r:new THREE.WebGLRenderer(tries[i]),errs:errs}; }
+    catch(e){ const m='Versuch '+(i+1)+': '+((e&&e.message)||e); errs.push(m); console.warn('WebGL '+m); }
   }
-  // Letzter Versuch: eigenen Kontext erzeugen und übergeben
-  try{
-    const gl=canvas.getContext('webgl2')||canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
-    if(gl) return new THREE.WebGLRenderer({canvas:canvas,context:gl,antialias:false});
-  }catch(e){ console.warn('WebGL-Kontextversuch fehlgeschlagen:', e&&e.message); }
-  return null;
+  return {r:null,errs:errs};
 }
-let renderer=makeRenderer();
-if(!renderer){ fatal('Dieses Gerät/dieser Browser konnte kein 3D (WebGL) starten. Bitte im Browser die Hardwarebeschleunigung aktivieren oder einen aktuellen Chrome/Edge/Firefox verwenden. Technische Details: F12 → Konsole.'); throw new Error('no webgl'); }
+const _mk=makeRenderer();
+let renderer=_mk.r;
+if(!renderer){ fatal('Dieses Gerät/dieser Browser konnte kein 3D (WebGL) starten.<br>Bitte im Browser die Hardwarebeschleunigung aktivieren oder einen aktuellen Chrome/Edge/Firefox verwenden.<br><br><span style="font-size:12px;color:#93a4b8;text-align:left;display:inline-block">Technische Details:<br>'+_mk.errs.join('<br>')+'</span>'); throw new Error('no webgl'); }
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+// Den von three erzeugten Canvas in die Bühne einsetzen (ersetzt den statischen #c)
+const canvas=renderer.domElement; canvas.id='c';
+(function(){ const stage=document.getElementById('stage'); const old=stage.querySelector('canvas'); if(old&&old!==canvas){ old.parentNode.replaceChild(canvas,old); } else if(!old){ stage.insertBefore(canvas,stage.firstChild); } })();
 renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0f1720);
