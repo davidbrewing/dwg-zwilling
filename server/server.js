@@ -54,8 +54,8 @@ app.post('/api/convert', upload.single('file'), (req, res) => {
 
   // DWG -> DXF über LibreDWG
   const outPath = path.join(os.tmpdir(), 'conv_' + crypto.randomBytes(6).toString('hex') + '.dxf');
-  // dwg2dxf: -y = ohne Rückfrage überschreiben, -o = Ausgabedatei
-  execFile('dwg2dxf', ['-y', '-o', outPath, tmpIn], { timeout: 60000 }, (err, _stdout, stderr) => {
+  // dwg2dxf: -o = Ausgabedatei, danach die DWG-Eingabedatei
+  execFile('dwg2dxf', ['-o', outPath, tmpIn], { timeout: 90000 }, (err, _stdout, stderr) => {
     fs.readFile(outPath, 'utf8', (rErr, data) => {
       cleanup(outPath);
       if (rErr || !data) {
