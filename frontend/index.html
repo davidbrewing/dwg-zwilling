@@ -159,6 +159,8 @@
       <div id="fltBau"></div>
       <div class="sec-title">Medien / Versorgung</div>
       <div id="fltMedien"></div>
+      <div class="sec-title">Außenanlagen &amp; Umgebung</div>
+      <div id="fltAussen"></div>
       <div class="sec-title">Kreisläufe / Fließrichtung</div>
       <label class="flt" style="justify-content:flex-start"><input type="checkbox" id="flowToggle"><span class="name">Fließrichtung animieren</span></label>
       <div id="circuitList"></div>
@@ -354,6 +356,10 @@ const CATS = {
   fenster: {label:'Fenster',         color:0x8fd0e6, grp:'bau',   extr:true},
   tuer:    {label:'Türen',           color:0xc39a63, grp:'bau',   extr:true},
   versorger:{label:'Öffentl. Versorgung',color:0xb0bcc9,grp:'bau',extr:true},
+  pv:      {label:'Photovoltaik',    color:0x2b4a86, grp:'bau',   extr:true},
+  parkplatz:{label:'Parkplätze',     color:0x8a939d, grp:'aussen',extr:true},
+  laterne: {label:'Mastleuchten',    color:0xcdb26a, grp:'aussen',extr:true},
+  baum:    {label:'Bäume / Grün',    color:0x3f7a3a, grp:'aussen',extr:true},
   heizung: {label:'Heizung',         color:0xd8492f, grp:'medien', pipe:true},
   waerme:  {label:'Fernwärme',       color:0xe8873a, grp:'medien', pipe:true},
   kaelte:  {label:'Kälte',           color:0x5bc8ff, grp:'medien', pipe:true},
@@ -853,6 +859,41 @@ function buildDemo(){
     energie:{Typ:'WC-Tür',Breite:'0,9 m',Barrierefrei:'ja'},
     wartung:{Intervall:'2 Jahre',Zuständig:'Standortmanagement'}});
 
+  // ---------- Photovoltaik auf den Dächern (Einspeisung Strom) ----------
+  const pv=(g,x,y,z,w,dp,kwp,name)=>{ const m=box(w,0.1,dp,mat(0x1c3358,{rough:0.2,metal:0.5})); m.rotation.x=-0.32; place(m,x,y,z);
+    addEl(m,{cat:'pv',g:g,name:name,
+      energie:{Typ:'PV-Modulfeld (monokristallin)',Leistung:kwp+' kWp',Ausrichtung:'Süd',Neigung:'15°','Jahresertrag':'ca. '+Math.round(kwp*0.95)+' MWh/a',Wechselrichter:'String'},
+      einspeisung:[{medium:'elektro',wert:kwp,einheit:'kW',quelle:'PV-Eigenerzeugung'}],
+      statik:{Aufständerung:'Aluminium, dachparallel','Zusatzlast':'ca. 15 kg/m²','Statik-Nachweis':'geprüft'},
+      wartung:{'Letzte Prüfung':'2026-03-20',Intervall:'jährlich (E-Check)',Zuständig:'Elektrotechnik'},dokumente:[{name:'PV_Datenblatt.pdf',typ:'PDF'},{name:'PV_Ertragsprognose.pdf',typ:'PDF'}]}); };
+  [[-5,45,'1'],[0,45,'2'],[5,45,'3']].forEach(r=>pv('A',Ax,9.5,r[0],24,3,r[1],'PV-Feld Dach A ('+r[2]+')'));
+  [[-2.5,18,'1'],[2.5,18,'2']].forEach(r=>pv('B',Bx,7.35,r[0],11,2.4,r[1],'PV-Feld Dach B ('+r[2]+')'));
+
+  // ---------- Außenanlagen: Parkplatz, Mastleuchten, Bäume ----------
+  const PLx=6, PLz=17;   // Parkplatz südlich der Gebäude
+  const slab=box(34,0.12,7,mat(0x2b3038,{rough:0.95})); place(slab,PLx,0,PLz);
+  addEl(slab,{cat:'parkplatz',g:'V',name:'Mitarbeiterparkplatz (34 Stellplätze)',
+    statik:{Belag:'Asphalt auf Schottertragschicht',Fläche:'238 m²',Entwässerung:'Versickerungsmulde'},
+    energie:{'E-Ladesäulen':'4 × 22 kW (vorbereitet)'},
+    wartung:{'Markierung erneuert':'2025-05',Intervall:'nach Bedarf',Zuständig:'Standortmanagement'},dokumente:[{name:'Freiflaechenplan.pdf',typ:'PDF'}]});
+  for(let i=0;i<=13;i++){ const mk=box(0.12,0.14,6,mat(0xdfe6ee,{rough:0.8})); mk.position.set(-11.7+i*2.6,0.07,0); slab.add(mk); }
+  [[-9.5,0x8a3b3b],[-4.3,0x35506e],[3.9,0x4a4f57],[9.1,0x577a48]].forEach(c=>{
+    const car=box(1.8,1.2,4,mat(c[1],{rough:0.5,metal:0.35})); car.position.set(c[0],0.66,-0.2); slab.add(car);
+    const cab=box(1.6,0.62,2,mat(0x20252b,{rough:0.25,opacity:0.75})); cab.position.set(c[0],1.42,-0.5); slab.add(cab); });
+  const laterne=(x,z,i)=>{ const pole=box(0.18,4.4,0.18,mat(0x3a4048,{rough:0.5,metal:0.6})); place(pole,x,2.2,z);
+    const head=box(0.75,0.22,0.42,mat(0xfff3c0,{rough:0.3})); head.material.emissive=new THREE.Color(0xffd766); head.material.emissiveIntensity=0.85; head.position.set(0,2.25,0.16); pole.add(head);
+    addEl(pole,{cat:'laterne',g:'V',name:'Mastleuchte '+i,
+      energie:{Leuchtmittel:'LED 60 W',Lichtstrom:'8.000 lm',Steuerung:'Dämmerungs-/Zeitschaltung',Lichtpunkthöhe:'4,4 m'},
+      verbrauch:[{medium:'elektro',wert:0.06,einheit:'kW'}],
+      wartung:{'Letzte Prüfung':'2025-11',Intervall:'2 Jahre',Zuständig:'Elektrotechnik'},dokumente:[{name:'Beleuchtungsplan_Aussen.pdf',typ:'PDF'}]}); };
+  [[-11,12],[0,12],[11,12],[-11,22],[0,22],[11,22]].forEach((p,i)=>laterne(p[0],p[1],i+1));
+  const baum=(x,z,s,i)=>{ const canopy=new THREE.Mesh(new THREE.SphereGeometry(1.4*s,10,8),mat(0x3f7a3a,{rough:0.95})); place(canopy,x,2.8*s,z); canopy.castShadow=true;
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.16*s,0.24*s,2.6*s,6),mat(0x6b4a2a,{rough:0.9})); trunk.position.set(0,-1.7*s,0); canopy.add(trunk);
+    addEl(canopy,{cat:'baum',g:'V',name:'Baum '+i,
+      energie:{Art:'Laubbaum (Spitzahorn)',Funktion:'Verschattung / Regenrückhalt',Kronendurchmesser:(Math.round(2.8*s))+' m'},
+      wartung:{'Baumkontrolle':'2025-10',Intervall:'jährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Baumkataster.pdf',typ:'PDF'}]}); };
+  [[-30,12,1.1,1],[-24,22,0.9,2],[-2,12,1.2,3],[6,23,1.0,4],[24,12,1.1,5],[28,2,0.9,6],[24,-8,1.0,7]].forEach(t=>baum(t[0],t[1],t[2],t[3]));
+
   document.getElementById('drop').classList.add('hide');
   switchTo('demo');
 }
@@ -866,8 +907,8 @@ function clearScene(){
 //  Filter (Demo)
 // ============================================================
 function buildFilters(){
-  const bau=document.getElementById('fltBau'), med=document.getElementById('fltMedien'), geb=document.getElementById('fltGeb');
-  bau.innerHTML=''; med.innerHTML=''; geb.innerHTML='';
+  const bau=document.getElementById('fltBau'), med=document.getElementById('fltMedien'), geb=document.getElementById('fltGeb'), aus=document.getElementById('fltAussen');
+  bau.innerHTML=''; med.innerHTML=''; geb.innerHTML=''; if(aus)aus.innerHTML='';
   const catCount={}; elements.forEach(m=>catCount[m.userData.kategorie]=(catCount[m.userData.kategorie]||0)+1);
   const bldCount={}; elements.forEach(m=>bldCount[m.userData.gebaeude]=(bldCount[m.userData.gebaeude]||0)+1);
   Object.entries(CATS).forEach(([key,c])=>{
@@ -876,7 +917,7 @@ function buildFilters(){
     const row=document.createElement('label'); row.className='flt';
     row.innerHTML='<input type="checkbox" '+(catOn[key]?'checked':'')+'><span class="swatch" style="background:'+hex(c.color)+'"></span><span class="name">'+c.label+'</span><span class="count">'+catCount[key]+'</span>';
     row.querySelector('input').addEventListener('change',e=>{catOn[key]=e.target.checked;applyDemoVis();});
-    (c.grp==='bau'?bau:med).appendChild(row);
+    (c.grp==='bau'?bau:(c.grp==='aussen'?(aus||med):med)).appendChild(row);
   });
   Object.entries(BLD).forEach(([key,b])=>{
     if(!bldCount[key]) return;
