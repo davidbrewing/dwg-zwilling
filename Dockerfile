@@ -32,6 +32,12 @@ COPY frontend ./frontend
 # Three.js lokal einbinden (wird beim Build heruntergeladen -> keine externe CDN-Abhängigkeit zur Laufzeit)
 RUN cp /opt/three.min.js /app/frontend/three.min.js
 
+# Datenverzeichnis für dauerhaft gespeicherte Standortmodelle.
+# Wird beim Start als Docker-Volume eingehängt (-v zwilling-data:/data),
+# damit die Daten Rebuilds und Neustarts überstehen.
+ENV DATA_DIR=/data
+RUN mkdir -p /data
+
 ENV PORT=3000
 EXPOSE 3000
 CMD ["node", "server/server.js"]
