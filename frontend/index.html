@@ -133,6 +133,13 @@
     </div>
     <!-- DXF-Filter -->
     <div id="dxfFilters" style="display:none">
+      <div class="sec-title">Standortmodell (Server)</div>
+      <div id="srvBox">
+        <button class="btn primary" id="btnSaveSite" style="width:100%">＋ Als Standortmodell speichern</button>
+        <button class="btn" id="btnSavePipes" style="width:100%;display:none">🔄 Leitungen sichern</button>
+        <button class="btn" id="btnDeleteSite" style="width:100%;display:none;margin-top:6px">🗑 Standortmodell löschen</button>
+        <div class="empty" id="srvHint" style="margin-top:6px">Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar.</div>
+      </div>
       <div class="sec-title">Darstellung</div>
       <div class="ctrl"><label for="extrude">Höhe (Extrusion)</label><input type="range" id="extrude" min="0" max="24" value="6" step="0.5"></div>
       <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
@@ -349,12 +356,7 @@ let parsed=null, transform=null;
 const catOn={}, bldOn={}, layerOn={};
 let idc=0, selected=null;
 let hasUpload=false, uploadName='';
-function refreshModelSel(){
-  const s=document.getElementById('modelSel'); let up=s.querySelector('option[value="uploaded"]');
-  if(hasUpload){ if(!up){up=document.createElement('option');up.value='uploaded';s.appendChild(up);} up.textContent='📄 '+uploadName; }
-  else if(up){ up.remove(); }
-  s.value=(mode==='dxf')?'uploaded':'demo';
-}
+function refreshModelSel(){ populateModelMenu(); if(typeof updateSrvBox==='function')updateSrvBox(); }
 function switchTo(t){
   if(typeof drawMode!=='undefined'&&drawMode) toggleDraw(false);
   if(typeof measureMode!=='undefined'&&measureMode) toggleMeasure(false);
@@ -713,8 +715,9 @@ function renderLayers(){const box=document.getElementById('layers');box.innerHTM
     row.querySelector('input').addEventListener('change',e=>{layerOn[name]=e.target.checked;applyLayerVis();if(selected&&!selected.visible)deselect();});
     box.appendChild(row);});}
 function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const med=MEDIA_RE.test(o.userData.layer);o.visible=(o.userData.kind==='line')?(vis&&(showLines||med)):vis;});}
-function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
+function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
   parsed=m; uploadName=name||'Hochgeladenes Modell'; hasUpload=true;
+  lastDXFText=text; currentServerId=opts.serverId||null;
   // Robuste Skalierung: Ausreißer-Geometrie (Streupunkte, Titelblöcke, Rahmen) ignorieren
   const _pts=[]; m.entities.forEach(e=>{ if(e.type==='LINE'){_pts.push([e.x1,e.y1],[e.x2,e.y2]);} else if(e.type==='POLYLINE'){e.verts.forEach(v=>_pts.push([v.x,v.y]));} else if(e.type==='CIRCLE'){_pts.push([e.cx-e.r,e.cy],[e.cx+e.r,e.cy],[e.cx,e.cy-e.r],[e.cx,e.cy+e.r]);} else if(e.type==='ARC'){_pts.push([e.cx,e.cy]);} else if(e.type==='3DFACE'){e.pts.forEach(p=>_pts.push([p.x,p.y]));} });
   const _xs=_pts.map(p=>p[0]).sort((a,b)=>a-b), _ys=_pts.map(p=>p[1]).sort((a,b)=>a-b);
@@ -726,6 +729,14 @@ function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast(
   Object.keys(layerOn).forEach(k=>delete layerOn[k]); buildDXF();
   document.getElementById('drop').classList.add('hide');
   switchTo('uploaded');
+  // Gespeicherte Leitungen dieses Server-Modells wiederherstellen
+  if(opts.pipes && opts.pipes.length){
+    const key=currentModelKey();
+    for(let i=drawnMeshes.length-1;i>=0;i--){ if(drawnMeshes[i].userData._model===key){ const mm=drawnMeshes[i]; drawnGroup.remove(mm); if(mm.geometry)mm.geometry.dispose(); if(mm.material)mm.material.dispose(); drawnMeshes.splice(i,1);} }
+    for(let i=drawnPipes.length-1;i>=0;i--){ if(drawnPipes[i].model===key) drawnPipes.splice(i,1); }
+    opts.pipes.forEach(d=>{ const pts=d.pts||[]; if(pts.length<2)return; const def={id:++drawIdc,medium:d.medium||'wasser',height:d.height||0,name:d.name||'',pts:pts,model:key,_on:true}; drawnPipes.push(def); makeDrawnPipe(def); });
+    renderDrawnList(); applyDrawnVis();
+  }
   toast('Modell geladen: '+m.stats.entities+' Objekte, '+m.stats.layers+' Layer');
 }
 async function handleFile(file){const n=file.name.toLowerCase();
@@ -745,7 +756,11 @@ const fileInput=document.getElementById('file');
 ['btnOpen','btnOpen2'].forEach(id=>document.getElementById(id).onclick=()=>fileInput.click());
 fileInput.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);fileInput.value='';};
 document.getElementById('btnDemo2').onclick=buildDemo;
-document.getElementById('modelSel').addEventListener('change',e=>switchTo(e.target.value==='uploaded'?'uploaded':'demo'));
+document.getElementById('modelSel').addEventListener('change',e=>{ const v=e.target.value;
+  if(v==='demo'){ currentServerId=null; switchTo('demo'); }
+  else if(v==='uploaded'){ currentServerId=null; switchTo('uploaded'); }
+  else if(v.indexOf('srv:')===0){ loadServerModel(v.slice(4)); }
+});
 const VIEWS={iso:[-0.9,1.0],top:[0,0.06],front:[0,1.54],back:[Math.PI,1.54],left:[-Math.PI/2,1.54],right:[Math.PI/2,1.54]};
 document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>{const v=VIEWS[b.dataset.v];theta=v[0];phi=v[1];applyCam();});
 const stage=document.getElementById('stage'),drop=document.getElementById('drop');
@@ -760,7 +775,7 @@ stage.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handleFile(e.dataTr
 const drawnGroup=new THREE.Group(); scene.add(drawnGroup);
 let drawMode=false, drawPts=[], drawPreview=null, drawIdc=0;
 const drawnMeshes=[], drawnPipes=[];
-function currentModelKey(){ return mode==='demo' ? 'demo' : ('upload:'+(uploadName||'')); }
+function currentModelKey(){ if(mode==='demo')return 'demo'; if(currentServerId)return 'srv:'+currentServerId; return 'upload:'+(uploadName||''); }
 // Bodenpunkt (y=0) aus Mausposition über eine mathematische Ebene bestimmen
 function groundPoint(e){
   const r=canvas.getBoundingClientRect();
@@ -973,12 +988,105 @@ addEventListener('keydown',e=>{ if(!measureMode)return;
   }
 });
 
+// ============================================================
+//  Server-Persistenz: Standortmodelle dauerhaft speichern/laden
+// ============================================================
+let serverModels=[], currentServerId=null, lastDXFText='';
+async function loadServerModels(){
+  try{ const r=await fetch('api/models'); serverModels = r.ok ? (await r.json()) : []; }
+  catch(e){ serverModels=[]; }
+  populateModelMenu(); updateSrvBox();
+}
+function populateModelMenu(){
+  const s=document.getElementById('modelSel'); if(!s)return;
+  s.innerHTML='';
+  const add=(v,t)=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; s.appendChild(o); };
+  add('demo','🏭 Beispielmodell');
+  serverModels.forEach(m=>add('srv:'+m.id,'📍 '+(m.name||'Standortmodell')));
+  if(hasUpload && !currentServerId) add('uploaded','📄 '+uploadName+' (ungespeichert)');
+  let want='demo';
+  if(mode==='dxf') want = currentServerId ? ('srv:'+currentServerId) : 'uploaded';
+  if(!s.querySelector('option[value="'+String(want).replace(/"/g,'')+'"]')) want='demo';
+  s.value=want;
+}
+function updateSrvBox(){
+  const save=document.getElementById('btnSaveSite'); if(!save)return;
+  const pipesBtn=document.getElementById('btnSavePipes'), del=document.getElementById('btnDeleteSite'), hint=document.getElementById('srvHint');
+  const isServer=!!currentServerId, isDxf=(mode==='dxf');
+  save.style.display=(isDxf&&!isServer)?'':'none';
+  pipesBtn.style.display=(isDxf&&isServer)?'':'none';
+  del.style.display=(isDxf&&isServer)?'':'none';
+  hint.textContent=isServer
+    ? 'Liegt dauerhaft auf dem Server – über den Link für alle sichtbar. „Leitungen sichern" speichert Änderungen an den gezeichneten Leitungen.'
+    : 'Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar.';
+}
+async function loadServerModel(id){
+  toast('Standortmodell wird geladen …',false,true);
+  try{
+    const r=await fetch('api/models/'+encodeURIComponent(id));
+    if(!r.ok)throw new Error('Server '+r.status);
+    const data=await r.json();
+    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[]});
+  }catch(err){ toast('Standortmodell konnte nicht geladen werden: '+err.message,true); }
+}
+async function saveAsSiteModel(){
+  if(mode!=='dxf'||!parsed||!lastDXFText){ toast('Bitte zuerst eine Datei hochladen.',true); return; }
+  if(currentServerId){ toast('Dieses Modell ist bereits gespeichert.'); return; }
+  const name=prompt('Name für das Standortmodell:', uploadName||'Standortmodell');
+  if(name===null) return;
+  toast('Wird auf dem Server gespeichert …',false,true);
+  try{
+    const oldKey=currentModelKey();
+    const pipes=drawnPipes.filter(d=>d.model===oldKey);
+    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes})});
+    if(!r.ok)throw new Error((await r.text().catch(()=>''))||('Server '+r.status));
+    const res=await r.json();
+    const newKey='srv:'+res.id;
+    drawnPipes.forEach(d=>{ if(d.model===oldKey)d.model=newKey; });
+    drawnMeshes.forEach(mm=>{ if(mm.userData._model===oldKey)mm.userData._model=newKey; });
+    currentServerId=res.id; uploadName=res.name||name;
+    await loadServerModels();
+    renderDrawnList(); applyDrawnVis(); updateSrvBox();
+    toast('Standortmodell gespeichert: '+(res.name||name));
+  }catch(err){ toast('Speichern fehlgeschlagen: '+err.message,true); }
+}
+async function saveSitePipes(){
+  if(!currentServerId){ toast('Erst als Standortmodell speichern.',true); return; }
+  toast('Leitungen werden gesichert …',false,true);
+  try{
+    const pipes=drawnPipes.filter(d=>d.model==='srv:'+currentServerId);
+    const r=await fetch('api/models/'+currentServerId+'/pipes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes})});
+    if(!r.ok)throw new Error('Server '+r.status);
+    toast('Leitungen im Standortmodell gesichert ('+pipes.length+').');
+  }catch(err){ toast('Sichern fehlgeschlagen: '+err.message,true); }
+}
+async function deleteSiteModel(){
+  if(!currentServerId)return;
+  if(!confirm('Dieses Standortmodell dauerhaft vom Server löschen?'))return;
+  const id=currentServerId, key='srv:'+id;
+  toast('Wird gelöscht …',false,true);
+  try{
+    const r=await fetch('api/models/'+id,{method:'DELETE'});
+    if(!r.ok)throw new Error('Server '+r.status);
+    for(let i=drawnMeshes.length-1;i>=0;i--){ if(drawnMeshes[i].userData._model===key){ const mm=drawnMeshes[i]; drawnGroup.remove(mm); if(mm.geometry)mm.geometry.dispose(); if(mm.material)mm.material.dispose(); drawnMeshes.splice(i,1);} }
+    for(let i=drawnPipes.length-1;i>=0;i--){ if(drawnPipes[i].model===key)drawnPipes.splice(i,1); }
+    currentServerId=null;
+    await loadServerModels();
+    switchTo('demo');
+    toast('Standortmodell gelöscht.');
+  }catch(err){ toast('Löschen fehlgeschlagen: '+err.message,true); }
+}
+document.getElementById('btnSaveSite').onclick=saveAsSiteModel;
+document.getElementById('btnSavePipes').onclick=saveSitePipes;
+document.getElementById('btnDeleteSite').onclick=deleteSiteModel;
+
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
 (function loop(){requestAnimationFrame(loop);updateMeasureLabels();renderer.render(scene,camera);})();
 
-// Start: Beispiel laden
+// Start: Beispiel laden + gespeicherte Standortmodelle vom Server holen
 buildDemo();
+loadServerModels();
 </script>
 </body>
 </html>
