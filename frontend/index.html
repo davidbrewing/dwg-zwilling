@@ -408,7 +408,7 @@ sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.left=-70;sun.shadow.camera.right=70;sun.shadow.camera.top=70;sun.shadow.camera.bottom=-70;sun.shadow.camera.far=200;
 scene.add(sun);
 const grid=new THREE.GridHelper(240,60,0x2b3a4d,0x1b2735); grid.position.y=-0.05; scene.add(grid);
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(240,240), new THREE.MeshStandardMaterial({color:0x121b26,roughness:1}));
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(240,240), new THREE.MeshStandardMaterial({color:0x121b26,roughness:1,transparent:true,opacity:0.4}));
 ground.rotation.x=-Math.PI/2; ground.position.y=-0.06; ground.receiveShadow=true; scene.add(ground);
 
 let demoGroup=null, dxfGroup=null, mode='demo';
@@ -459,10 +459,38 @@ function addEl(mesh,o){
   demoGroup.add(mesh); elements.push(mesh);
 }
 function place(mesh,x,y,z){mesh.position.set(x,y,z);return mesh;}
+// Rohrverlauf: gerade Strecken mit abgerundeten 90°-Ecken (Biegeradius) – keine weichen Kurven
+function roundedPath(pts, radius, closed){
+  const P=[]; pts.forEach(p=>{ const v=new THREE.Vector3(p[0],p[1],p[2]); if(!P.length||P[P.length-1].distanceTo(v)>1e-4)P.push(v); });
+  const n=P.length;
+  const path=new THREE.CurvePath();
+  if(n<2){ path.add(new THREE.LineCurve3(P[0]||new THREE.Vector3(),P[0]||new THREE.Vector3())); return path; }
+  if(n===2){ path.add(new THREE.LineCurve3(P[0],P[1])); return path; }
+  const get=i=>P[((i%n)+n)%n];
+  const corners = closed ? P.map((_,i)=>i) : P.map((_,i)=>i).slice(1,n-1);
+  const A=P.map(p=>p.clone()), B=P.map(p=>p.clone());
+  corners.forEach(i=>{ const prev=get(i-1),cur=get(i),next=get(i+1);
+    const din=cur.clone().sub(prev); const lin=din.length(); if(lin<1e-6)return; din.multiplyScalar(1/lin);
+    const dout=next.clone().sub(cur); const lout=dout.length(); if(lout<1e-6)return; dout.multiplyScalar(1/lout);
+    const t=Math.min(radius, lin*0.45, lout*0.45);
+    A[i]=cur.clone().addScaledVector(din,-t); B[i]=cur.clone().addScaledVector(dout,t);
+  });
+  if(closed){
+    for(let k=0;k<corners.length;k++){ const i=corners[k], j=corners[(k+1)%corners.length];
+      path.add(new THREE.QuadraticBezierCurve3(A[i].clone(),get(i).clone(),B[i].clone()));
+      path.add(new THREE.LineCurve3(B[i].clone(),A[j].clone()));
+    }
+  } else {
+    let cur=P[0].clone();
+    corners.forEach(i=>{ path.add(new THREE.LineCurve3(cur.clone(),A[i].clone())); path.add(new THREE.QuadraticBezierCurve3(A[i].clone(),get(i).clone(),B[i].clone())); cur=B[i].clone(); });
+    path.add(new THREE.LineCurve3(cur.clone(),P[n-1].clone()));
+  }
+  return path;
+}
 function pipe(o){
-  const v=o.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
-  const curve=new THREE.CatmullRomCurve3(v,false);
-  const geo=new THREE.TubeGeometry(curve,Math.max(16,(v.length-1)*8),o.r||0.13,10,false);
+  const curve=roundedPath(o.pts, o.bend||0.35, false);
+  const len=Math.max(1,curve.getLength());
+  const geo=new THREE.TubeGeometry(curve,Math.max(10,Math.round(len*3)),o.r||0.13,10,false);
   const m=new THREE.Mesh(geo,mat(CATS[o.cat].color,{rough:0.3,metal:0.5}));
   addEl(m,o);
 }
@@ -480,11 +508,10 @@ function flowTexture(colorHex){
 }
 // Geschlossener Leitungskreis (Vor-/Rücklauf bzw. Ringleitung) mit Fließrichtung
 function circuit(o){
-  const v=o.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
   const closed=o.closed!==false;
-  const curve=new THREE.CatmullRomCurve3(v,closed);
-  const len=curve.getLength();
-  const geo=new THREE.TubeGeometry(curve,Math.max(24,Math.round(len*1.4)),o.r||0.12,12,closed);
+  const curve=roundedPath(o.pts, o.bend||0.5, closed);
+  const len=Math.max(1,curve.getLength());
+  const geo=new THREE.TubeGeometry(curve,Math.max(24,Math.round(len*3)),o.r||0.12,12,closed);
   const tex=flowTexture(CATS[o.cat].color);
   tex.repeat.set(Math.max(6,Math.round(len/2)),1);
   const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({map:tex,roughness:0.4,metalness:0.3}));
@@ -590,35 +617,48 @@ function buildDemo(){
     verbrauch:[{medium:'elektro',wert:11,einheit:'kW'}],
     wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement',Nächste:'2026-06-05'},
     dokumente:[{name:'RLT_A_Protokoll.pdf',typ:'PDF'}]});
-  // ---- Versorgungskreise Halle A (geschlossene Ringe mit Fließrichtung) ----
-  circuit({cat:'heizung',g:'A',name:'Heizkreis Halle A (Vor-/Rücklauf)',r:0.13,dir:1,closed:true,
-    pts:[[Ax-13,7.4,Az-8],[Ax+13,7.4,Az-8],[Ax+13,7.4,Az+8],[Ax-13,7.4,Az+8]],
-    energie:{Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 80',Volumenstrom:'9 m³/h',Vorlauf:'70 °C',Rücklauf:'50 °C',Kreis:'geschlossen'},
-    wartung:{'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizungsschema_A.pdf',typ:'PDF'}]});
-  pipe({cat:'heizung',g:'A',name:'Anbindung Lufterhitzer',r:0.09,pts:[[Ax+11,7.4,Az-8],[Ax+11,4.8,Az-8]]});
-  circuit({cat:'druckluft',g:'A',name:'Druckluft-Ringleitung Halle A',r:0.09,dir:1,closed:true,
-    pts:[[Ax-13,6.9,Az-8],[Ax+13,6.9,Az-8],[Ax+13,6.9,Az+8],[Ax-13,6.9,Az+8]],
-    energie:{Medium:'Druckluft (Ring)',Nennweite:'DN 50',Betriebsdruck:'8 bar',Volumenstrom:'510 l/min',Material:'Aluminium'},
-    wartung:{'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Druckluftplan_A.pdf',typ:'PDF'}]});
-  pipe({cat:'druckluft',g:'A',name:'Kompressor → Ring',r:0.08,pts:[[Ax-12,2,Az+7],[Ax-12,6.9,Az+7],[Ax-13,6.9,Az+8]]});
-  [[Ax-7,2.9,Az+4],[Ax+8,2.3,Az-4],[Ax-6,2.1,Az-6],[Ax+2,1.9,Az+6]].forEach((p,i)=>pipe({cat:'druckluft',g:'A',name:'Druckluft-Abzweig '+(i+1),r:0.05,pts:[[p[0],6.9,p[2]],[p[0],p[1],p[2]]]}));
-  circuit({cat:'kaelte',g:'A',name:'Kältekreis Halle A (Vor-/Rücklauf)',r:0.1,dir:1,closed:true,
-    pts:[[Ax-12,6.6,Az-8],[Ax+8,6.6,Az-8],[Ax+8,6.6,Az+6],[Ax-12,6.6,Az+6]],
-    energie:{Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 65',Vorlauf:'8 °C',Rücklauf:'14 °C',Volumenstrom:'14 m³/h',Kreis:'geschlossen'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaeltekreis_A.pdf',typ:'PDF'}]});
-  pipe({cat:'kaelte',g:'A',name:'Kältemaschine → Ring',r:0.08,pts:[[Ax-12,2,Az-7],[Ax-12,6.6,Az-7],[Ax-12,6.6,Az-8]]});
-  [[Ax-7,2.9,Az+4],[Ax+2,1.9,Az+6]].forEach((p,i)=>pipe({cat:'kaelte',g:'A',name:'Kälte-Abzweig '+(i+1),r:0.05,pts:[[p[0],6.6,p[2]],[p[0],p[1],p[2]]]}));
-  circuit({cat:'wasser',g:'A',name:'Brauchwasser-Ring Halle A',r:0.07,dir:1,closed:true,
-    pts:[[Ax-13,6.2,Az-6],[Ax+13,6.2,Az-6],[Ax+13,6.2,Az+2],[Ax-13,6.2,Az+2]],
-    energie:{Medium:'Trinkwasser kalt (Ring)',Nennweite:'DN 65',Volumenstrom:'9 m³/h',Druck:'3,2 bar',Temperatur:'12 °C'},
-    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Trinkwasser_A.dwg',typ:'DWG'}]});
-  circuit({cat:'lueftung',g:'A',name:'Lüftungs-Ring Halle A (Zu-/Abluft)',r:0.3,dir:1,closed:true,
-    pts:[[Ax-13,7.9,Az-8.5],[Ax+13,7.9,Az-8.5],[Ax+13,7.9,Az+8.5],[Ax-13,7.9,Az+8.5]],
-    energie:{Medium:'Zu-/Abluft (Ring)',Querschnitt:'700×700',Volumenstrom:'9.500 m³/h',Wärmerückgewinnung:'82 %'},
-    wartung:{'Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement'},dokumente:[{name:'Lueftungsplan_A.pdf',typ:'PDF'}]});
-  pipe({cat:'lueftung',g:'A',name:'RLT A → Ring',r:0.22,pts:[[Ax+6,9,Az],[Ax+6,7.9,Az],[Ax+6,7.9,Az-8.5]]});
-  // Elektro: Radialverteilung NSHV → Maschinen (endet an den Geräten)
-  [[Ax-7,3,Az+4],[Ax+8,2.4,Az-4],[Ax-6,2.2,Az-6],[Ax+2,2,Az+6],[Ax+10,3,Az+5],[Ax-12,2,Az-7]].forEach((p,i)=>pipe({cat:'elektro',g:'A',name:'Stromabgang '+(i+1),r:0.05,pts:[[Ax-13,0.6,Az-1],[Ax-13,0.6,p[2]],[p[0],0.6,p[2]],[p[0],p[1],p[2]]]}));
+  // ---- Versorgungsnetz Halle A: erdverlegte Ringe + senkrechte Steigleitungen ----
+  const RA={x0:Ax-12,x1:Ax+12,z0:Az-8.5,z1:Az+8.5};
+  const ringA=(cat,name,y,r,en,wa,dok)=>circuit({cat:cat,g:'A',name:name,r:r,dir:1,closed:true,bend:0.6,
+    pts:[[RA.x0,y,RA.z0],[RA.x1,y,RA.z0],[RA.x1,y,RA.z1],[RA.x0,y,RA.z1]],energie:en,wartung:wa,dokumente:dok});
+  const riseA=(cat,name,cx,cy,cz,y,r)=>pipe({cat:cat,g:'A',name:name,r:r||0.05,bend:0.3,pts:[[cx,cy,cz],[cx,y,cz],[cx,y,(cz<0?RA.z0:RA.z1)]]});
+  const eKabelA=(name,cx,cy,cz)=>pipe({cat:'elektro',g:'A',name:name,r:0.05,bend:0.3,pts:[[Ax-13,1,Az-1],[Ax-13,-0.5,Az-1],[cx,-0.5,Az-1],[cx,-0.5,cz],[cx,cy,cz]]});
+  ringA('heizung','Heizkreis Halle A (erdverlegt, Vor-/Rücklauf)',-0.7,0.11,
+    {Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 80',Volumenstrom:'9 m³/h',Vorlauf:'70 °C',Rücklauf:'50 °C',Verlegung:'erdverlegt'},
+    {'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Heizungsschema_A.pdf',typ:'PDF'}]);
+  riseA('heizung','Steigleitung Lufterhitzer',Ax+11,4,Az-8,-0.7,0.08);
+  riseA('heizung','Steigleitung Lackierkabine (Wärme)',Ax+10,1.5,Az+5,-0.7,0.06);
+  ringA('druckluft','Druckluft-Ringleitung Halle A (erdverlegt)',-1.0,0.09,
+    {Medium:'Druckluft (Ring)',Nennweite:'DN 50',Betriebsdruck:'8 bar',Volumenstrom:'510 l/min',Verlegung:'erdverlegt'},
+    {'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Druckluftplan_A.pdf',typ:'PDF'}]);
+  riseA('druckluft','Steigleitung Kompressor',Ax-12,1,Az+7,-1.0,0.08);
+  riseA('druckluft','DL-Abzweig Anlage 1',Ax-7,1.5,Az+4,-1.0);
+  riseA('druckluft','DL-Abzweig Anlage 2',Ax+8,1.2,Az-4,-1.0);
+  riseA('druckluft','DL-Abzweig Schweißzelle',Ax-6,1.1,Az-6,-1.0);
+  riseA('druckluft','DL-Abzweig CNC',Ax+2,1,Az+6,-1.0);
+  ringA('kaelte','Kältekreis Halle A (erdverlegt, Vor-/Rücklauf)',-1.3,0.09,
+    {Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 65',Vorlauf:'8 °C',Rücklauf:'14 °C',Volumenstrom:'14 m³/h',Verlegung:'erdverlegt'},
+    {Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Kaeltekreis_A.pdf',typ:'PDF'}]);
+  riseA('kaelte','Steigleitung Kältemaschine',Ax-12,1,Az-7,-1.3,0.08);
+  riseA('kaelte','Kälte-Abzweig Anlage 1',Ax-7,1.5,Az+4,-1.3);
+  riseA('kaelte','Kälte-Abzweig CNC',Ax+2,1,Az+6,-1.3);
+  ringA('wasser','Brauchwasser-Ring Halle A (erdverlegt)',-1.6,0.07,
+    {Medium:'Trinkwasser kalt (Ring)',Nennweite:'DN 65',Volumenstrom:'9 m³/h',Druck:'3,2 bar',Verlegung:'erdverlegt'},
+    {'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Trinkwasser_A.dwg',typ:'DWG'}]);
+  riseA('wasser','Wasser-Abzweig Anlage 1 (Kühlung)',Ax-7,1.5,Az+4,-1.6);
+  riseA('wasser','Wasser-Abzweig CNC (Kühlung)',Ax+2,1,Az+6,-1.6);
+  ringA('lueftung','Lüftungs-Ring Halle A (erdverlegt, Zu-/Abluft)',-0.5,0.25,
+    {Medium:'Zu-/Abluft (Ring)',Querschnitt:'700×700',Volumenstrom:'9.500 m³/h',Wärmerückgewinnung:'82 %',Verlegung:'erdverlegt'},
+    {'Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement'},[{name:'Lueftungsplan_A.pdf',typ:'PDF'}]);
+  riseA('lueftung','Steigleitung RLT A',Ax+6,9,Az,-0.5,0.18);
+  riseA('lueftung','Zuluft Lackierkabine',Ax+10,1.5,Az+5,-0.5,0.14);
+  riseA('lueftung','Absaugung Schweißzelle',Ax-6,1.1,Az-6,-0.5,0.1);
+  eKabelA('Stromabgang Anlage 1',Ax-7,1.5,Az+4);
+  eKabelA('Stromabgang Anlage 2',Ax+8,1.2,Az-4);
+  eKabelA('Stromabgang Schweißzelle',Ax-6,1.1,Az-6);
+  eKabelA('Stromabgang CNC',Ax+2,1,Az+6);
+  eKabelA('Stromabgang Lackierkabine',Ax+10,1.5,Az+5);
+  eKabelA('Stromabgang Kältemaschine',Ax-12,1,Az-7);
 
   // ---------- Gebäude B: Bürogebäude (14 x 12 x 6), Zentrum (15,0) ----------
   const Bx=15, Bz=0, Bw=14, Bd=12, Bh=6;
@@ -685,29 +725,36 @@ function buildDemo(){
     energie:{Medium:'Abluft',Volumenstrom:'300 m³/h',Schaltung:'Präsenz/Nachlauf'},
     verbrauch:[{medium:'lueftung',wert:300,einheit:'m³/h'}],
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  // ---- Versorgungskreise Büro B (geschlossene Ringe) ----
-  circuit({cat:'heizung',g:'B',name:'Heizkreis Büro B (Vor-/Rücklauf)',r:0.07,dir:1,closed:true,
-    pts:[[Bx-5,2.6,Bz-4],[Bx+5,2.6,Bz-4],[Bx+5,2.6,Bz+4],[Bx-5,2.6,Bz+4]],
-    energie:{Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'55 °C',Rücklauf:'40 °C',Heizkörper:'12 Stk'},
-    wartung:{'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizung_B.pdf',typ:'PDF'}]});
-  pipe({cat:'heizung',g:'B',name:'Übergabestation → Heizkreis',r:0.06,pts:[[Bx-5,1.8,Bz+4],[Bx-5,2.6,Bz+4]]});
-  circuit({cat:'kaelte',g:'B',name:'Kaltwasserkreis Büro B (Vor-/Rücklauf)',r:0.06,dir:1,closed:true,
-    pts:[[Bx-4,2.9,Bz-3],[Bx+4,2.9,Bz-3],[Bx+4,2.9,Bz+3],[Bx-4,2.9,Bz+3]],
-    energie:{Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'7 °C',Rücklauf:'12 °C'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_B.pdf',typ:'PDF'}]});
-  pipe({cat:'kaelte',g:'B',name:'Klimagerät → Kaltwasserkreis',r:0.05,pts:[[Bx+4,7.4,Bz],[Bx+4,2.9,Bz],[Bx+4,2.9,Bz-3]]});
-  pipe({cat:'kaelte',g:'B',name:'Serverraum-Kühlung',r:0.05,pts:[[Bx+4,2.9,Bz+3],[Bx+5,2,Bz+3]]});
-  circuit({cat:'wasser',g:'B',name:'Trinkwasser-Ring Büro B',r:0.05,dir:1,closed:true,
-    pts:[[Bx-5,2.4,Bz-4.3],[Bx+5,2.4,Bz-4.3],[Bx+5,2.4,Bz-2],[Bx-5,2.4,Bz-2]],
-    energie:{Medium:'Trinkwasser (Ring)',Nennweite:'DN 32',Druck:'3,0 bar'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  circuit({cat:'lueftung',g:'B',name:'Lüftungs-Ring Büro B (Zu-/Abluft)',r:0.16,dir:1,closed:true,
-    pts:[[Bx-4,5,Bz-3.5],[Bx+4,5,Bz-3.5],[Bx+4,5,Bz+3.5],[Bx-4,5,Bz+3.5]],
-    energie:{Medium:'Zu-/Abluft (Ring)',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja'},
-    wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'}});
-  pipe({cat:'elektro',g:'B',name:'Elektro-Steigleitung B',r:0.06,pts:[[Bx-5.5,0.5,Bz],[Bx-5.5,5.5,Bz]],
-    energie:{Medium:'Elektro NS',Bemessungsstrom:'160 A',Spannung:'400 V','Unterverteilung':'EG + OG',PV:'Anschluss vorbereitet'},
-    wartung:{'DGUV V3':'2025-05-10',Intervall:'4 Jahre (Büro)',Zuständig:'Elektrotechnik'},dokumente:[{name:'E-Plan_B.pdf',typ:'PDF'}]});
-  [[Bx+5,2,Bz+3],[Bx+4,7.4,Bz]].forEach((p,i)=>pipe({cat:'elektro',g:'B',name:'Stromabgang B'+(i+1),r:0.04,pts:[[Bx-5.5,0.9,Bz],[Bx-5.5,0.9,p[2]],[p[0],0.9,p[2]],[p[0],p[1],p[2]]]}));
+  // ---- Versorgungsnetz Büro B: erdverlegte Ringe + Steigleitungen ----
+  const RB={x0:Bx-5,x1:Bx+5,z0:Bz-4.5,z1:Bz+4.5};
+  const ringB=(cat,name,y,r,en,wa,dok)=>circuit({cat:cat,g:'B',name:name,r:r,dir:1,closed:true,bend:0.5,
+    pts:[[RB.x0,y,RB.z0],[RB.x1,y,RB.z0],[RB.x1,y,RB.z1],[RB.x0,y,RB.z1]],energie:en,wartung:wa,dokumente:dok});
+  const riseB=(cat,name,cx,cy,cz,y,r)=>pipe({cat:cat,g:'B',name:name,r:r||0.04,bend:0.25,pts:[[cx,cy,cz],[cx,y,cz],[cx,y,(cz<0?RB.z0:RB.z1)]]});
+  const eKabelB=(name,cx,cy,cz)=>pipe({cat:'elektro',g:'B',name:name,r:0.04,bend:0.25,pts:[[Bx-5.5,0.9,Bz],[Bx-5.5,-0.5,Bz],[cx,-0.5,Bz],[cx,-0.5,cz],[cx,cy,cz]]});
+  ringB('heizung','Heizkreis Büro B (erdverlegt, Vor-/Rücklauf)',-0.7,0.07,
+    {Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'55 °C',Rücklauf:'40 °C',Heizkörper:'12 Stk',Verlegung:'erdverlegt'},
+    {'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Heizung_B.pdf',typ:'PDF'}]);
+  riseB('heizung','Steigleitung Wärmeübergabe B',Bx-5,0.9,Bz+4,-0.7,0.06);
+  riseB('heizung','Warmwasser Sanitär B',Sx,0.85,Sz+1.2,-0.7,0.05);
+  ringB('kaelte','Kaltwasserkreis Büro B (erdverlegt, Vor-/Rücklauf)',-0.9,0.06,
+    {Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'7 °C',Rücklauf:'12 °C',Verlegung:'erdverlegt'},
+    {Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Kaelte_B.pdf',typ:'PDF'}]);
+  riseB('kaelte','Steigleitung Klimagerät B',Bx+4,7.4,Bz,-0.9,0.05);
+  riseB('kaelte','Kühlung Serverraum',Bx+5,1,Bz+3,-0.9,0.05);
+  ringB('wasser','Trinkwasser-Ring Büro B (erdverlegt)',-1.1,0.05,
+    {Medium:'Trinkwasser (Ring)',Nennweite:'DN 32',Druck:'3,0 bar','Versorgt':'Sanitär',Verlegung:'erdverlegt'},
+    {'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},[{name:'Sanitaerplan_B.pdf',typ:'PDF'}]);
+  riseB('wasser','Trinkwasser Sanitär B (Waschbecken)',Sx,0.85,Sz+1.2,-1.1,0.05);
+  riseB('wasser','Trinkwasser WC B',Sx,0.24,Sz-0.6,-1.1,0.04);
+  ringB('lueftung','Lüftungs-Ring Büro B (erdverlegt, Zu-/Abluft)',-0.5,0.13,
+    {Medium:'Zu-/Abluft (Ring)',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja',Verlegung:'erdverlegt'},
+    {'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'},[{name:'RLT_B_Protokoll.pdf',typ:'PDF'}]);
+  riseB('lueftung','Steigleitung RLT B',Bx-4,7.3,Bz+3,-0.5,0.11);
+  riseB('lueftung','Zuluft Büroräume',Bx,4.6,Bz+2,-0.5,0.09);
+  riseB('lueftung','WC-Abluft',Sx,5.4,Sz,-0.5,0.07);
+  eKabelB('Stromabgang Serverraum',Bx+5,1,Bz+3);
+  eKabelB('Stromabgang Klimagerät B',Bx+4,7.4,Bz);
+  eKabelB('Stromabgang RLT B',Bx-4,7.3,Bz+3);
   // RLT Büro B (Lüftungs-Erzeuger) + Zuluftauslässe (Verbraucher)
   addEl(place(box(2,1.2,1.6,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx-4,Bh+1.3,Bz+3),{cat:'lueftung',g:'B',name:'RLT-Gerät Büro B',
     energie:{Typ:'Kompaktgerät mit WRG',Luftleistung:'1.800 m³/h','Elektr. Anschluss':'3 kW',Wärmerückgewinnung:'85 %'},
@@ -718,18 +765,11 @@ function buildDemo(){
     energie:{Medium:'Zuluft Büroräume',Volumenstrom:'1.600 m³/h',Auslässe:'Drallauslässe'},
     verbrauch:[{medium:'lueftung',wert:1600,einheit:'m³/h'}],
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  // Sanitär-Anbindung: Trink- und Warmwasser zu den Waschbecken/WC
-  pipe({cat:'wasser',g:'B',name:'Trinkwasser Sanitär B',r:0.05,pts:[[Bx-5,2.4,Sz],[Sx,2.4,Sz],[Sx,1.1,Sz+1.2]],
-    energie:{Medium:'Trinkwasser kalt',Nennweite:'DN 25','Versorgt':'3 WC, Urinal, 3 Waschbecken','Summe Anschlusswert':'≈ 1,1 m³/h'},
-    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Sanitaerplan_B.pdf',typ:'PDF'}]});
-  pipe({cat:'heizung',g:'B',name:'Warmwasser Sanitär B',r:0.04,pts:[[Bx-5,2.2,Sz+1.5],[Sx,2.2,Sz+1.5],[Sx,1.1,Sz+1.2]],
-    energie:{Medium:'Warmwasser',Nennweite:'DN 20',Temperatur:'55 °C','Zirkulation':'ja'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
 
   // ---------- Verbindung / Außenanlagen (Medientrasse A ⇄ B) ----------
   // Trasse-Kanal (Element)
-  addEl(place(box(14,0.8,2.2,mat(0x74808f,{rough:0.9,opacity:0.45})),(-6+8)/2,0.3,0),{cat:'anlagen',g:'V',name:'Medienkanal / Versorgungstrasse',
-    statik:{Bauart:'begehbarer Betonkanal',Betongüte:'C30/37',Länge:'14 m',Querschnitt:'2,0×1,0 m'},
+  addEl(place(box(14,1.6,2.6,mat(0x74808f,{rough:0.9,opacity:0.4})),(-6+8)/2,-0.85,0),{cat:'anlagen',g:'V',name:'Medienkanal / Versorgungstrasse (erdverlegt)',
+    statik:{Bauart:'begehbarer Betonkanal (unterirdisch)',Betongüte:'C30/37',Länge:'14 m',Querschnitt:'2,0×1,0 m'},
     energie:{Belegung:'Fernwärme, Kälte, Druckluft, Elektro, Wasser'},
     wartung:{'Letzte Begehung':'2025-08-19',Intervall:'2 Jahre',Zuständig:'Standortmanagement'},
     dokumente:[{name:'Medientrasse_Schnitt.dwg',typ:'DWG'},{name:'Trasse_Belegung.pdf',typ:'PDF'}]});
@@ -741,31 +781,34 @@ function buildDemo(){
     einspeisung:[{medium:'elektro',wert:400,einheit:'kW',quelle:'öffentliches Netz'},{medium:'wasser',wert:25,einheit:'m³/h',quelle:'öffentliches Netz'},{medium:'waerme',wert:220,einheit:'kW',quelle:'Fernwärmenetz'}],
     wartung:{'Zählerablesung':'monatlich','Letzte Prüfung':'2026-02-01',Intervall:'jährlich',Zuständig:'Energiemanagement'},
     dokumente:[{name:'Hausanschluss_Uebergabe.pdf',typ:'PDF'},{name:'Zaehlerkonzept.pdf',typ:'PDF'}]});
-  // Fernwärme als geschlossener Primärkreis (öffentlich → A → B → zurück)
-  circuit({cat:'waerme',g:'V',name:'Fernwärme-Primärkreis (Standort)',r:0.15,dir:1,closed:true,
-    pts:[[Ux,0.9,Uz],[Ux,0.9,-2],[-6,0.9,-1.2],[-6,0.9,0.8],[8,0.9,0.8],[8,0.9,-1.2],[Ux+3,0.9,-3],[Ux+3,0.9,Uz]],
-    energie:{Medium:'Fernwärme (Primärkreis)',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'220 kW','Quelle':'Fernwärmenetz'},
+  // Fernwärme als geschlossener Primärkreis – erdverlegt (öffentlich ↔ Gebäude)
+  circuit({cat:'waerme',g:'V',name:'Fernwärme-Primärkreis (Standort, erdverlegt)',r:0.14,dir:1,closed:true,bend:0.7,
+    pts:[[-6,-1.2,-12],[8,-1.2,-12],[8,-1.2,-1.2],[-6,-1.2,-1.2]],
+    energie:{Medium:'Fernwärme (Primärkreis)',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'220 kW','Quelle':'Fernwärmenetz',Verlegung:'erdverlegt'},
     wartung:{'Letzte Prüfung':'2025-07-04',Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Trasse.pdf',typ:'PDF'},{name:'Fernwaerme_Uebergabe.pdf',typ:'PDF'}]});
-  // Strom-Einspeisung: öffentlich → Hauptverteilungen (endet an den Verteilern)
-  pipe({cat:'elektro',g:'V',name:'Netzanschluss NS (öffentlich → Standort)',r:0.12,pts:[[Ux,0.6,Uz],[Ux,0.6,-1],[Ax-13,0.6,-1]],
-    energie:{Medium:'Strom Einspeisung','Anschlussleistung':'400 kW',Spannung:'400 V','Quelle':'öffentliches Netz'},
+  pipe({cat:'waerme',g:'V',name:'Fernwärme-Anbindung Übergabestation',r:0.1,bend:0.3,pts:[[Ux,1.3,Uz],[Ux,-1.2,Uz],[Ux,-1.2,-12]]});
+  // Strom-Einspeisung: erdverlegte Kabel zu den Hauptverteilungen (enden an den Verteilern)
+  pipe({cat:'elektro',g:'V',name:'Netzanschluss NS → NS-HV Halle A (erdverlegt)',r:0.11,bend:0.35,
+    pts:[[Ux,1.3,Uz],[Ux,-1.0,Uz],[Ax-13,-1.0,Uz],[Ax-13,-1.0,-1],[Ax-13,1,-1]],
+    energie:{Medium:'Strom Einspeisung','Anschlussleistung':'400 kW',Spannung:'400 V','Quelle':'öffentliches Netz',Verlegung:'Erdkabel'},
     wartung:{'DGUV V3':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'Netzanschluss.pdf',typ:'PDF'}]});
-  pipe({cat:'elektro',g:'V',name:'Erdkabel → Büro B',r:0.09,pts:[[Ux,0.6,-1],[8,0.6,-1],[Bx-5.5,0.6,Bz]],
-    energie:{Medium:'Elektro NS',Querschnitt:'4×95 mm²',Bemessungsstrom:'200 A','Verlegung':'im Medienkanal'},
+  pipe({cat:'elektro',g:'V',name:'Erdkabel → NS-UV Büro B',r:0.09,bend:0.35,
+    pts:[[Ux,-1.0,Uz],[Bx-5.5,-1.0,Uz],[Bx-5.5,-1.0,Bz],[Bx-5.5,0.9,Bz]],
+    energie:{Medium:'Elektro NS',Querschnitt:'4×95 mm²',Bemessungsstrom:'200 A','Verlegung':'Erdkabel'},
     wartung:{Intervall:'4 Jahre',Zuständig:'Elektrotechnik'},dokumente:[{name:'Erdkabel_AB.pdf',typ:'PDF'}]});
-  // Wasser-Einspeisung: öffentlich → beide Gebäude (endet an den Gebäuden)
-  pipe({cat:'wasser',g:'V',name:'Wasser-Hausanschluss (öffentlich → Standort)',r:0.1,pts:[[Ux,0.5,Uz],[Ux+1,0.5,-2],[8,0.5,-2],[Bx-5,0.5,Bz-2]],
-    energie:{Medium:'Trinkwasser Einspeisung',Nennweite:'DN 80',Volumenstrom:'25 m³/h',Druck:'4 bar','Quelle':'öffentliches Netz'},
+  // Wasser-Einspeisung: erdverlegt zu den Trinkwasser-Ringen beider Gebäude
+  pipe({cat:'wasser',g:'V',name:'Wasser-Hausanschluss → Büro B (erdverlegt)',r:0.09,bend:0.35,
+    pts:[[Ux,1.3,Uz],[Ux,-1.1,Uz],[Bx,-1.1,Uz],[Bx,-1.1,RB.z0]],
+    energie:{Medium:'Trinkwasser Einspeisung',Nennweite:'DN 80',Volumenstrom:'25 m³/h',Druck:'4 bar','Quelle':'öffentliches Netz',Verlegung:'erdverlegt'},
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Wasser_Hausanschluss.pdf',typ:'PDF'}]});
-  pipe({cat:'wasser',g:'V',name:'Wasser → Halle A',r:0.08,pts:[[Ux+1,0.5,-2],[-6,0.5,-2],[Ax+13,0.5,-6]],
-    energie:{Medium:'Trinkwasser',Nennweite:'DN 65','Quelle':'Hausanschluss'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  // Kälte-/Druckluft-Verbund zwischen A (Erzeugung) und B (Bedarf) im Medienkanal
-  pipe({cat:'kaelte',g:'V',name:'Kälte-Verbund A → B',r:0.1,pts:[[Ax-12,0.9,Az-7],[-6,0.9,0],[8,0.9,0],[Bx+4,0.9,Bz]],
-    energie:{Medium:'Kaltwasser',Nennweite:'DN 80','Quelle':'Prozess-Kältemaschine Halle A'},
+  pipe({cat:'wasser',g:'V',name:'Wasser → Halle A (erdverlegt)',r:0.08,bend:0.35,
+    pts:[[Ux,-1.1,Uz],[-27,-1.1,Uz],[-27,-1.6,Uz],[-27,-1.6,RA.z0]],
+    energie:{Medium:'Trinkwasser',Nennweite:'DN 65','Quelle':'Hausanschluss',Verlegung:'erdverlegt'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  // Kälte-Verbund Halle A (Erzeugung) → Büro B (Bedarf), erdverlegt zwischen den Ringen
+  pipe({cat:'kaelte',g:'V',name:'Kälte-Verbund Halle A → Büro B (erdverlegt)',r:0.09,bend:0.35,
+    pts:[[RA.x1,-1.3,-4],[RB.x0,-1.3,-4],[RB.x0,-0.9,-4]],
+    energie:{Medium:'Kaltwasser',Nennweite:'DN 80','Quelle':'Prozess-Kältemaschine Halle A',Verlegung:'erdverlegt'},
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_Trasse.pdf',typ:'PDF'}]});
-  pipe({cat:'druckluft',g:'V',name:'Druckluft-Verbund A → B',r:0.06,pts:[[Ax-12,0.9,Az+7],[-6,0.9,0.5],[8,0.9,0.5],[Bx-4,0.9,Bz]],
-    energie:{Medium:'Druckluft',Nennweite:'DN 50','Quelle':'Kompressorstation Halle A'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
 
   // ---------- Innenwände, Fenster, Türen ----------
   // Innenwände Halle A: abgetrennter Meister-/Büroraum in der Ecke
@@ -1063,8 +1106,8 @@ function makeDrawnPipe(def){
   const cat=CATS[def.medium]||CATS.wasser, h=def.height||0;
   const v=def.pts.map(p=>new THREE.Vector3(p[0],h,p[1]));
   if(v.length<2) return null;
-  const curve=new THREE.CatmullRomCurve3(v,false);
-  const geo=new THREE.TubeGeometry(curve,Math.max(16,(v.length-1)*12),def.r||0.16,12,false);
+  const curve=roundedPath(def.pts.map(p=>[p[0],h,p[1]]), def.bend||0.4, false);
+  const geo=new THREE.TubeGeometry(curve,Math.max(12,Math.round(curve.getLength()*3)),def.r||0.16,12,false);
   const mesh=new THREE.Mesh(geo,mat(cat.color,{rough:0.3,metal:0.5}));
   mesh.castShadow=true; mesh.receiveShadow=true;
   mesh.userData={
@@ -1563,9 +1606,9 @@ function renderCircuitList(){
 }
 function applyRenderStyle(){
   const s=renderStyle;
-  if(s==='realistisch'){ scene.background=new THREE.Color(0x9fc0e8); scene.fog=new THREE.Fog(0x9fc0e8,150,440); sun.intensity=1.2; hemi.intensity=0.55; ground.material.color.setHex(0x3f5a3a); }
-  else if(s==='roentgen'){ scene.background=new THREE.Color(0x0b1017); scene.fog=null; sun.intensity=0.5; hemi.intensity=1.05; ground.material.color.setHex(0x121b26); }
-  else { scene.background=new THREE.Color(0x0f1720); scene.fog=new THREE.Fog(0x0f1720,120,320); sun.intensity=0.85; hemi.intensity=0.8; ground.material.color.setHex(0x121b26); }
+  if(s==='realistisch'){ scene.background=new THREE.Color(0x9fc0e8); scene.fog=new THREE.Fog(0x9fc0e8,150,440); sun.intensity=1.2; hemi.intensity=0.55; ground.material.color.setHex(0x3f5a3a); ground.material.opacity=1; ground.material.transparent=false; }
+  else if(s==='roentgen'){ scene.background=new THREE.Color(0x0b1017); scene.fog=null; sun.intensity=0.5; hemi.intensity=1.05; ground.material.color.setHex(0x121b26); ground.material.opacity=0.12; ground.material.transparent=true; }
+  else { scene.background=new THREE.Color(0x0f1720); scene.fog=new THREE.Fog(0x0f1720,120,320); sun.intensity=0.85; hemi.intensity=0.8; ground.material.color.setHex(0x121b26); ground.material.opacity=0.4; ground.material.transparent=true; }
   ground.material.needsUpdate=true;
   elements.forEach(m=>{ const k=m.userData.kategorie, base=m.userData._opacity;
     if(k==='huelle'||k==='innenwand'){ if(base==null)return; let op=base;
