@@ -13,6 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && curl -fsSL https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js -o /opt/three.min.js \
  && rm -rf /var/lib/apt/lists/*
 
+# jsPDF (Open Source, MIT) für den PDF-Export – optional (Druck-Fallback im Frontend)
+RUN curl -fsSL https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js -o /opt/jspdf.umd.min.js \
+ || echo 'jsPDF-Download uebersprungen (optional, Druck-Fallback aktiv)'
+
 RUN git clone --depth 1 https://github.com/LibreDWG/libredwg.git /tmp/libredwg \
  && cd /tmp/libredwg \
  && sh autogen.sh \
@@ -30,7 +34,8 @@ RUN npm install --omit=dev --no-audit --no-fund
 COPY server ./server
 COPY frontend ./frontend
 # Three.js lokal einbinden (wird beim Build heruntergeladen -> keine externe CDN-Abhängigkeit zur Laufzeit)
-RUN cp /opt/three.min.js /app/frontend/three.min.js
+RUN cp /opt/three.min.js /app/frontend/three.min.js \
+ && ( [ -f /opt/jspdf.umd.min.js ] && cp /opt/jspdf.umd.min.js /app/frontend/jspdf.umd.min.js || echo 'jsPDF nicht vorhanden – Druck-Fallback aktiv' )
 
 # Datenverzeichnis für dauerhaft gespeicherte Standortmodelle.
 # Wird beim Start als Docker-Volume eingehängt (-v zwilling-data:/data),
