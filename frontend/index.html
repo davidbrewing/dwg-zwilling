@@ -85,6 +85,9 @@
   .pipe-step .n{flex:0 0 26px;height:26px;border-radius:8px;background:var(--accent);color:#04121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
   .pipe-step .t b{font-size:13px}
   .pipe-step .t p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
+  #views{position:absolute;right:14px;bottom:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:5px;background:rgba(15,23,32,.7);border:1px solid var(--line);padding:7px;border-radius:9px;backdrop-filter:blur(4px)}
+  #views button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;cursor:pointer}
+  #views button:hover{border-color:var(--accent);background:#20303f}
   input[type=file]{display:none}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
@@ -96,7 +99,7 @@
     <div class="logo"><span class="dot"></span> Digitaler Zwilling <span class="sub">· Industriestandort</span></div>
     <div class="spacer"></div>
     <span id="fileName" style="font-size:12.5px;color:var(--muted)"></span>
-    <button class="btn" id="btnDemo">🏭 Beispiel</button>
+    <select id="modelSel" class="sel" title="Modell wählen"><option value="demo">🏭 Beispielmodell</option></select>
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
     <button class="btn" id="btnExport">⤒ Exportieren</button>
     <button class="btn primary" id="btnReset">⟲ Ansicht</button>
@@ -143,6 +146,15 @@
     <div id="hud">
       <b>Steuerung:</b> Ziehen = drehen · Mausrad = zoomen · Rechte Maustaste = verschieben<br>
       <span id="stats">–</span>
+    </div>
+
+    <div id="views">
+      <button data-v="iso">Iso</button>
+      <button data-v="top">Oben</button>
+      <button data-v="front">Vorne</button>
+      <button data-v="left">Links</button>
+      <button data-v="right">Rechts</button>
+      <button data-v="back">Hinten</button>
     </div>
 
     <div id="info">
@@ -266,6 +278,27 @@ const dxfMeshes=[];             // Upload-Meshes
 let parsed=null, transform=null;
 const catOn={}, bldOn={}, layerOn={};
 let idc=0, selected=null;
+let hasUpload=false, uploadName='';
+function refreshModelSel(){
+  const s=document.getElementById('modelSel'); let up=s.querySelector('option[value="uploaded"]');
+  if(hasUpload){ if(!up){up=document.createElement('option');up.value='uploaded';s.appendChild(up);} up.textContent='📄 '+uploadName; }
+  else if(up){ up.remove(); }
+  s.value=(mode==='dxf')?'uploaded':'demo';
+}
+function switchTo(t){
+  if(t==='demo'){ if(!demoGroup)return; mode='demo'; demoGroup.visible=true; if(dxfGroup)dxfGroup.visible=false;
+    setUIMode('demo'); buildFilters(); applyDemoVis(); deselect();
+    document.getElementById('fileName').textContent='Beispiel: Industriestandort';
+    document.getElementById('stats').innerHTML='<b>'+elements.length+'</b> Bauteile · <b>2</b> Gebäude';
+    fitCamera(60);
+  } else { if(!dxfGroup)return; mode='dxf'; if(demoGroup)demoGroup.visible=false; dxfGroup.visible=true;
+    setUIMode('dxf'); renderLayers(); applyLayerVis(); deselect();
+    document.getElementById('fileName').textContent=uploadName||'';
+    document.getElementById('stats').innerHTML='<b>'+parsed.stats.entities+'</b> Objekte · <b>'+parsed.stats.layers+'</b> Layer';
+    fitCamera(60);
+  }
+  refreshModelSel();
+}
 
 function mat(color,o){o=o||{};return new THREE.MeshStandardMaterial({color:color,roughness:o.rough==null?0.7:o.rough,metalness:o.metal==null?0.05:o.metal,transparent:o.opacity!=null,opacity:o.opacity==null?1:o.opacity,side:o.opacity!=null?THREE.DoubleSide:THREE.FrontSide});}
 function box(w,h,d,m){return new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);}
@@ -293,7 +326,7 @@ function pipe(o){
 //  Semantisches Beispielmodell (2 Gebäude + Verbindung)
 // ============================================================
 function buildDemo(){
-  clearScene();
+  if(demoGroup){ document.getElementById('drop').classList.add('hide'); switchTo('demo'); return; }
   mode='demo';
   demoGroup=new THREE.Group(); scene.add(demoGroup);
   idc=0; elements.length=0;
@@ -432,13 +465,8 @@ function buildDemo(){
   pipe({cat:'wasser',g:'V',name:'Trinkwasser-Verbindung',r:0.07,pts:[[-6,gy,-0.9],[8,gy,-0.9]],
     energie:{Medium:'Trinkwasser',Nennweite:'DN 50','Quelle':'Hausanschluss Halle A'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
 
-  // Zustandsdaten
-  document.getElementById('fileName').textContent='Beispiel: Industriestandort';
-  document.getElementById('stats').innerHTML='<b>'+elements.length+'</b> Bauteile · <b>2</b> Gebäude';
-  setUIMode('demo');
-  buildFilters();
-  fitCamera(60);
   document.getElementById('drop').classList.add('hide');
+  switchTo('demo');
 }
 
 function clearScene(){
@@ -611,7 +639,7 @@ function renderLayers(){const box=document.getElementById('layers');box.innerHTM
     box.appendChild(row);});}
 function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const med=MEDIA_RE.test(o.userData.layer);o.visible=(o.userData.kind==='line')?(vis&&(showLines||med)):vis;});}
 function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
-  clearScene(); parsed=m;
+  parsed=m; uploadName=name||'Hochgeladenes Modell'; hasUpload=true;
   // Robuste Skalierung: Ausreißer-Geometrie (Streupunkte, Titelblöcke, Rahmen) ignorieren
   const _pts=[]; m.entities.forEach(e=>{ if(e.type==='LINE'){_pts.push([e.x1,e.y1],[e.x2,e.y2]);} else if(e.type==='POLYLINE'){e.verts.forEach(v=>_pts.push([v.x,v.y]));} else if(e.type==='CIRCLE'){_pts.push([e.cx-e.r,e.cy],[e.cx+e.r,e.cy],[e.cx,e.cy-e.r],[e.cx,e.cy+e.r]);} else if(e.type==='ARC'){_pts.push([e.cx,e.cy]);} else if(e.type==='3DFACE'){e.pts.forEach(p=>_pts.push([p.x,p.y]));} });
   const _xs=_pts.map(p=>p[0]).sort((a,b)=>a-b), _ys=_pts.map(p=>p[1]).sort((a,b)=>a-b);
@@ -620,9 +648,9 @@ function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast(
   if(!(_maxX>_minX)||!(_maxY>_minY)){ _minX=m.bounds.minX;_maxX=m.bounds.maxX;_minY=m.bounds.minY;_maxY=m.bounds.maxY; }
   const size=Math.max(_maxX-_minX,_maxY-_minY)||1;
   transform={cx:(_minX+_maxX)/2,cy:(_minY+_maxY)/2,s:60/size};
-  Object.keys(layerOn).forEach(k=>delete layerOn[k]); setUIMode('dxf'); buildDXF(); renderLayers(); fitCamera(60);
-  document.getElementById('drop').classList.add('hide'); document.getElementById('fileName').textContent=name||'';
-  document.getElementById('stats').innerHTML='<b>'+m.stats.entities+'</b> Objekte · <b>'+m.stats.layers+'</b> Layer';
+  Object.keys(layerOn).forEach(k=>delete layerOn[k]); buildDXF();
+  document.getElementById('drop').classList.add('hide');
+  switchTo('uploaded');
   toast('Modell geladen: '+m.stats.entities+' Objekte, '+m.stats.layers+' Layer');
 }
 async function handleFile(file){const n=file.name.toLowerCase();
@@ -641,7 +669,10 @@ function toast(msg,err,spin){const t=document.getElementById('toast');t.classNam
 const fileInput=document.getElementById('file');
 ['btnOpen','btnOpen2'].forEach(id=>document.getElementById(id).onclick=()=>fileInput.click());
 fileInput.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);fileInput.value='';};
-['btnDemo','btnDemo2'].forEach(id=>document.getElementById(id).onclick=buildDemo);
+document.getElementById('btnDemo2').onclick=buildDemo;
+document.getElementById('modelSel').addEventListener('change',e=>switchTo(e.target.value==='uploaded'?'uploaded':'demo'));
+const VIEWS={iso:[-0.9,1.0],top:[0,0.06],front:[0,1.54],back:[Math.PI,1.54],left:[-Math.PI/2,1.54],right:[Math.PI/2,1.54]};
+document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>{const v=VIEWS[b.dataset.v];theta=v[0];phi=v[1];applyCam();});
 const stage=document.getElementById('stage'),drop=document.getElementById('drop');
 document.getElementById('btnOpen').addEventListener('dblclick',()=>drop.classList.remove('hide'));
 ['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
