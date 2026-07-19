@@ -148,12 +148,24 @@
   <div id="sidebar">
     <!-- Demo-Filter -->
     <div id="demoFilters">
+      <div class="sec-title">Darstellung</div>
+      <div class="ctrl"><label for="renderStyle">Render-Stil</label>
+        <select id="renderStyle" class="sel" style="padding:5px 8px">
+          <option value="schematisch">Schematisch</option>
+          <option value="realistisch">Realistisch</option>
+          <option value="roentgen">Röntgen (transparent)</option>
+        </select></div>
       <div class="sec-title">Bauwerk</div>
       <div id="fltBau"></div>
       <div class="sec-title">Medien / Versorgung</div>
       <div id="fltMedien"></div>
+      <div class="sec-title">Kreisläufe / Fließrichtung</div>
+      <label class="flt" style="justify-content:flex-start"><input type="checkbox" id="flowToggle"><span class="name">Fließrichtung animieren</span></label>
+      <div id="circuitList"></div>
       <div class="sec-title">Gebäude</div>
       <div id="fltGeb"></div>
+      <div class="sec-title" id="hiddenTitle" style="display:none">Ausgeblendete Bauteile</div>
+      <div id="hiddenList"></div>
     </div>
     <!-- DXF-Filter -->
     <div id="dxfFilters" style="display:none">
@@ -338,6 +350,9 @@ const CATS = {
   huelle:  {label:'Gebäudehülle',    color:0x7f8ea3, grp:'bau',   extr:true},
   anlagen: {label:'Anlagen / Geräte',color:0x8b6fd6, grp:'bau',   extr:true},
   sanitaer:{label:'Sanitär',         color:0x6fb1d6, grp:'bau',   extr:true},
+  innenwand:{label:'Innenwände',     color:0x9098a4, grp:'bau',   extr:true},
+  fenster: {label:'Fenster',         color:0x8fd0e6, grp:'bau',   extr:true},
+  tuer:    {label:'Türen',           color:0xc39a63, grp:'bau',   extr:true},
   versorger:{label:'Öffentl. Versorgung',color:0xb0bcc9,grp:'bau',extr:true},
   heizung: {label:'Heizung',         color:0xd8492f, grp:'medien', pipe:true},
   waerme:  {label:'Fernwärme',       color:0xe8873a, grp:'medien', pipe:true},
@@ -386,7 +401,7 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0f1720);
 scene.fog=new THREE.Fog(0x0f1720,120,320);
 const camera=new THREE.PerspectiveCamera(46,1,0.1,2000);
-scene.add(new THREE.HemisphereLight(0xbcd3ef,0x0e1620,0.8));
+const hemi=new THREE.HemisphereLight(0xbcd3ef,0x0e1620,0.8); scene.add(hemi);
 const sun=new THREE.DirectionalLight(0xffffff,0.85);
 sun.position.set(40,70,30); sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
@@ -403,13 +418,17 @@ let parsed=null, transform=null;
 const catOn={}, bldOn={}, layerOn={};
 let idc=0, selected=null;
 let hasUpload=false, uploadName='';
+const circuits=[];              // geschlossene Leitungskreise (mit Fließanimation)
+let flowOn=false, circuitHi=null;
+const hidden=new Set();         // einzeln ausgeblendete Bauteil-IDs
+let renderStyle='schematisch';
 function refreshModelSel(){ populateModelMenu(); if(typeof updateSrvBox==='function')updateSrvBox(); }
 function switchTo(t){
   if(typeof drawMode!=='undefined'&&drawMode) toggleDraw(false);
   if(typeof measureMode!=='undefined'&&measureMode) toggleMeasure(false);
   if(typeof clearMeasures==='function') clearMeasures();
   if(t==='demo'){ if(!demoGroup)return; mode='demo'; demoGroup.visible=true; if(dxfGroup)dxfGroup.visible=false;
-    setUIMode('demo'); buildFilters(); applyDemoVis(); deselect();
+    setUIMode('demo'); buildFilters(); renderCircuitList(); renderHiddenList(); applyDemoVis(); applyRenderStyle(); deselect();
     document.getElementById('fileName').textContent='ABB Werk Musterstadt · Standortmodell (Beispiel)';
     document.getElementById('stats').innerHTML='<b>'+elements.length+'</b> Bauteile · <b>2</b> Gebäude';
     fitCamera(60);
@@ -434,7 +453,8 @@ function addEl(mesh,o){
     name:o.name, kategorie:o.cat, katLabel:CATS[o.cat].label, gebaeude:o.g, gebLabel:BLD[o.g].label,
     statik:o.statik||null, energie:o.energie||null, wartung:o.wartung||null, dokumente:o.dokumente||[],
     verbrauch:o.verbrauch||null, einspeisung:o.einspeisung||null,
-    _e: mesh.material.emissive?mesh.material.emissive.clone():new THREE.Color(0)
+    _e: mesh.material.emissive?mesh.material.emissive.clone():new THREE.Color(0),
+    _opacity: (mesh.material.opacity!=null?mesh.material.opacity:1)
   };
   demoGroup.add(mesh); elements.push(mesh);
 }
@@ -445,6 +465,34 @@ function pipe(o){
   const geo=new THREE.TubeGeometry(curve,Math.max(16,(v.length-1)*8),o.r||0.13,10,false);
   const m=new THREE.Mesh(geo,mat(CATS[o.cat].color,{rough:0.3,metal:0.5}));
   addEl(m,o);
+}
+// Fließrichtungs-Textur: Grundfarbe des Mediums mit helleren Pfeilbändern
+function flowTexture(colorHex){
+  const c=document.createElement('canvas'); c.width=96; c.height=16; const g=c.getContext('2d');
+  const col=new THREE.Color(colorHex);
+  const base='rgb('+Math.round(col.r*130)+','+Math.round(col.g*130)+','+Math.round(col.b*130)+')';
+  const bright='rgb('+Math.round(Math.min(255,col.r*255+90))+','+Math.round(Math.min(255,col.g*255+90))+','+Math.round(Math.min(255,col.b*255+90))+')';
+  g.fillStyle=base; g.fillRect(0,0,96,16);
+  g.fillStyle=bright;
+  for(let i=0;i<2;i++){ const x=i*48; g.beginPath(); g.moveTo(x+6,3); g.lineTo(x+30,8); g.lineTo(x+6,13); g.closePath(); g.fill(); }
+  const tex=new THREE.CanvasTexture(c); tex.wrapS=THREE.RepeatWrapping; tex.wrapT=THREE.RepeatWrapping;
+  return tex;
+}
+// Geschlossener Leitungskreis (Vor-/Rücklauf bzw. Ringleitung) mit Fließrichtung
+function circuit(o){
+  const v=o.pts.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  const closed=o.closed!==false;
+  const curve=new THREE.CatmullRomCurve3(v,closed);
+  const len=curve.getLength();
+  const geo=new THREE.TubeGeometry(curve,Math.max(24,Math.round(len*1.4)),o.r||0.12,12,closed);
+  const tex=flowTexture(CATS[o.cat].color);
+  tex.repeat.set(Math.max(6,Math.round(len/2)),1);
+  const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({map:tex,roughness:0.4,metalness:0.3}));
+  addEl(m,o);
+  const id=circuits.length;
+  m.userData._circuit=id; m.userData._flowBase=1;
+  circuits.push({id:id,name:o.name,medium:o.cat,mesh:m,tex:tex,dir:(o.dir===-1?-1:1),speed:o.speed||0.01});
+  return m;
 }
 
 // ============================================================
@@ -542,22 +590,35 @@ function buildDemo(){
     verbrauch:[{medium:'elektro',wert:11,einheit:'kW'}],
     wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement',Nächste:'2026-06-05'},
     dokumente:[{name:'RLT_A_Protokoll.pdf',typ:'PDF'}]});
-  // Medien A (Rohre unter Dach, y≈7)
-  pipe({cat:'heizung',g:'A',name:'Heizung Vorlauf A',r:0.14,pts:[[Ax-13,7.3,Az-8],[Ax+13,7.3,Az-8]],
-    energie:{Medium:'Heizwasser Vorlauf',Nennweite:'DN 100',Volumenstrom:'42 m³/h',Vorlauftemperatur:'70 °C',Druck:'4,0 bar',Dämmung:'40 mm'},
-    wartung:{'Letzte Wartung':'2025-10-01',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizungsschema_A.pdf',typ:'PDF'}]});
-  pipe({cat:'wasser',g:'A',name:'Brauchwasser A',r:0.09,pts:[[Ax-13,6.9,Az-5],[Ax+13,6.9,Az-5]],
-    energie:{Medium:'Trinkwasser kalt',Nennweite:'DN 65',Volumenstrom:'11 m³/h',Druck:'3,2 bar',Temperatur:'12 °C',Material:'Edelstahl'},
-    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Trinkwasser_A.dwg',typ:'DWG'}]});
-  pipe({cat:'druckluft',g:'A',name:'Druckluftleitung A',r:0.08,pts:[[Ax-12,6.6,Az+7],[Ax-12,6.6,Az+2],[Ax+13,6.6,Az+2]],
-    energie:{Medium:'Druckluft',Nennweite:'DN 50',Betriebsdruck:'8 bar',Volumenstrom:'360 l/min',Material:'Aluminium'},
+  // ---- Versorgungskreise Halle A (geschlossene Ringe mit Fließrichtung) ----
+  circuit({cat:'heizung',g:'A',name:'Heizkreis Halle A (Vor-/Rücklauf)',r:0.13,dir:1,closed:true,
+    pts:[[Ax-13,7.4,Az-8],[Ax+13,7.4,Az-8],[Ax+13,7.4,Az+8],[Ax-13,7.4,Az+8]],
+    energie:{Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 80',Volumenstrom:'9 m³/h',Vorlauf:'70 °C',Rücklauf:'50 °C',Kreis:'geschlossen'},
+    wartung:{'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizungsschema_A.pdf',typ:'PDF'}]});
+  pipe({cat:'heizung',g:'A',name:'Anbindung Lufterhitzer',r:0.09,pts:[[Ax+11,7.4,Az-8],[Ax+11,4.8,Az-8]]});
+  circuit({cat:'druckluft',g:'A',name:'Druckluft-Ringleitung Halle A',r:0.09,dir:1,closed:true,
+    pts:[[Ax-13,6.9,Az-8],[Ax+13,6.9,Az-8],[Ax+13,6.9,Az+8],[Ax-13,6.9,Az+8]],
+    energie:{Medium:'Druckluft (Ring)',Nennweite:'DN 50',Betriebsdruck:'8 bar',Volumenstrom:'510 l/min',Material:'Aluminium'},
     wartung:{'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Druckluftplan_A.pdf',typ:'PDF'}]});
-  pipe({cat:'lueftung',g:'A',name:'Lüftungskanal Zuluft A',r:0.35,pts:[[Ax-13,7.6,Az],[Ax+13,7.6,Az]],
-    energie:{Medium:'Zuluft',Querschnitt:'700×700',Volumenstrom:'9.500 m³/h',Geschwindigkeit:'5,4 m/s',Wärmerückgewinnung:'82 %'},
-    wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement'},dokumente:[{name:'Lueftungsplan_A.pdf',typ:'PDF'}]});
-  pipe({cat:'elektro',g:'A',name:'Kabeltrasse A',r:0.1,pts:[[Ax-13,7.9,Az+8],[Ax+13,7.9,Az+8]],
-    energie:{Medium:'Elektro NS',Bemessungsstrom:'400 A',Spannung:'400 V',Belegung:'Kraft + Steuerung',Reserve:'ca. 30 %'},
-    wartung:{'DGUV V3 Prüfung':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'Stromlaufplan_A.pdf',typ:'PDF'}]});
+  pipe({cat:'druckluft',g:'A',name:'Kompressor → Ring',r:0.08,pts:[[Ax-12,2,Az+7],[Ax-12,6.9,Az+7],[Ax-13,6.9,Az+8]]});
+  [[Ax-7,2.9,Az+4],[Ax+8,2.3,Az-4],[Ax-6,2.1,Az-6],[Ax+2,1.9,Az+6]].forEach((p,i)=>pipe({cat:'druckluft',g:'A',name:'Druckluft-Abzweig '+(i+1),r:0.05,pts:[[p[0],6.9,p[2]],[p[0],p[1],p[2]]]}));
+  circuit({cat:'kaelte',g:'A',name:'Kältekreis Halle A (Vor-/Rücklauf)',r:0.1,dir:1,closed:true,
+    pts:[[Ax-12,6.6,Az-8],[Ax+8,6.6,Az-8],[Ax+8,6.6,Az+6],[Ax-12,6.6,Az+6]],
+    energie:{Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 65',Vorlauf:'8 °C',Rücklauf:'14 °C',Volumenstrom:'14 m³/h',Kreis:'geschlossen'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaeltekreis_A.pdf',typ:'PDF'}]});
+  pipe({cat:'kaelte',g:'A',name:'Kältemaschine → Ring',r:0.08,pts:[[Ax-12,2,Az-7],[Ax-12,6.6,Az-7],[Ax-12,6.6,Az-8]]});
+  [[Ax-7,2.9,Az+4],[Ax+2,1.9,Az+6]].forEach((p,i)=>pipe({cat:'kaelte',g:'A',name:'Kälte-Abzweig '+(i+1),r:0.05,pts:[[p[0],6.6,p[2]],[p[0],p[1],p[2]]]}));
+  circuit({cat:'wasser',g:'A',name:'Brauchwasser-Ring Halle A',r:0.07,dir:1,closed:true,
+    pts:[[Ax-13,6.2,Az-6],[Ax+13,6.2,Az-6],[Ax+13,6.2,Az+2],[Ax-13,6.2,Az+2]],
+    energie:{Medium:'Trinkwasser kalt (Ring)',Nennweite:'DN 65',Volumenstrom:'9 m³/h',Druck:'3,2 bar',Temperatur:'12 °C'},
+    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Trinkwasser_A.dwg',typ:'DWG'}]});
+  circuit({cat:'lueftung',g:'A',name:'Lüftungs-Ring Halle A (Zu-/Abluft)',r:0.3,dir:1,closed:true,
+    pts:[[Ax-13,7.9,Az-8.5],[Ax+13,7.9,Az-8.5],[Ax+13,7.9,Az+8.5],[Ax-13,7.9,Az+8.5]],
+    energie:{Medium:'Zu-/Abluft (Ring)',Querschnitt:'700×700',Volumenstrom:'9.500 m³/h',Wärmerückgewinnung:'82 %'},
+    wartung:{'Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement'},dokumente:[{name:'Lueftungsplan_A.pdf',typ:'PDF'}]});
+  pipe({cat:'lueftung',g:'A',name:'RLT A → Ring',r:0.22,pts:[[Ax+6,9,Az],[Ax+6,7.9,Az],[Ax+6,7.9,Az-8.5]]});
+  // Elektro: Radialverteilung NSHV → Maschinen (endet an den Geräten)
+  [[Ax-7,3,Az+4],[Ax+8,2.4,Az-4],[Ax-6,2.2,Az-6],[Ax+2,2,Az+6],[Ax+10,3,Az+5],[Ax-12,2,Az-7]].forEach((p,i)=>pipe({cat:'elektro',g:'A',name:'Stromabgang '+(i+1),r:0.05,pts:[[Ax-13,0.6,Az-1],[Ax-13,0.6,p[2]],[p[0],0.6,p[2]],[p[0],p[1],p[2]]]}));
 
   // ---------- Gebäude B: Bürogebäude (14 x 12 x 6), Zentrum (15,0) ----------
   const Bx=15, Bz=0, Bw=14, Bd=12, Bh=6;
@@ -624,21 +685,29 @@ function buildDemo(){
     energie:{Medium:'Abluft',Volumenstrom:'300 m³/h',Schaltung:'Präsenz/Nachlauf'},
     verbrauch:[{medium:'lueftung',wert:300,einheit:'m³/h'}],
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  // Medien B
-  pipe({cat:'heizung',g:'B',name:'Heizkreis B',r:0.08,pts:[[Bx-5,2.6,Bz+4],[Bx-5,2.6,Bz-4],[Bx+5,2.6,Bz-4]],
-    energie:{Medium:'Heizwasser',Nennweite:'DN 40',Vorlauftemperatur:'55 °C',Heizkörper:'12 Stk',Regelung:'Einzelraum'},
+  // ---- Versorgungskreise Büro B (geschlossene Ringe) ----
+  circuit({cat:'heizung',g:'B',name:'Heizkreis Büro B (Vor-/Rücklauf)',r:0.07,dir:1,closed:true,
+    pts:[[Bx-5,2.6,Bz-4],[Bx+5,2.6,Bz-4],[Bx+5,2.6,Bz+4],[Bx-5,2.6,Bz+4]],
+    energie:{Medium:'Heizwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'55 °C',Rücklauf:'40 °C',Heizkörper:'12 Stk'},
     wartung:{'Hydraul. Abgleich':'2025-10',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Heizung_B.pdf',typ:'PDF'}]});
-  pipe({cat:'kaelte',g:'B',name:'Kaltwasserleitung B',r:0.08,pts:[[Bx+4,5.2,Bz],[Bx+4,2.6,Bz],[Bx-4,2.6,Bz]],
-    energie:{Medium:'Kaltwasser',Nennweite:'DN 40',Vorlauf:'7 °C',Rücklauf:'12 °C',Dämmung:'diffusionsdicht'},
+  pipe({cat:'heizung',g:'B',name:'Übergabestation → Heizkreis',r:0.06,pts:[[Bx-5,1.8,Bz+4],[Bx-5,2.6,Bz+4]]});
+  circuit({cat:'kaelte',g:'B',name:'Kaltwasserkreis Büro B (Vor-/Rücklauf)',r:0.06,dir:1,closed:true,
+    pts:[[Bx-4,2.9,Bz-3],[Bx+4,2.9,Bz-3],[Bx+4,2.9,Bz+3],[Bx-4,2.9,Bz+3]],
+    energie:{Medium:'Kaltwasser (geschl. Kreis)',Nennweite:'DN 40',Vorlauf:'7 °C',Rücklauf:'12 °C'},
     wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_B.pdf',typ:'PDF'}]});
-  pipe({cat:'wasser',g:'B',name:'Trinkwasser B',r:0.06,pts:[[Bx-5,2.4,Bz-4],[Bx+5,2.4,Bz-4]],
-    energie:{Medium:'Trinkwasser',Nennweite:'DN 32',Druck:'3,0 bar','Warmwasser':'dezentral'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  pipe({cat:'elektro',g:'B',name:'Elektro-Steigleitung B',r:0.07,pts:[[Bx-5,0.5,Bz+4],[Bx-5,5.5,Bz+4]],
+  pipe({cat:'kaelte',g:'B',name:'Klimagerät → Kaltwasserkreis',r:0.05,pts:[[Bx+4,7.4,Bz],[Bx+4,2.9,Bz],[Bx+4,2.9,Bz-3]]});
+  pipe({cat:'kaelte',g:'B',name:'Serverraum-Kühlung',r:0.05,pts:[[Bx+4,2.9,Bz+3],[Bx+5,2,Bz+3]]});
+  circuit({cat:'wasser',g:'B',name:'Trinkwasser-Ring Büro B',r:0.05,dir:1,closed:true,
+    pts:[[Bx-5,2.4,Bz-4.3],[Bx+5,2.4,Bz-4.3],[Bx+5,2.4,Bz-2],[Bx-5,2.4,Bz-2]],
+    energie:{Medium:'Trinkwasser (Ring)',Nennweite:'DN 32',Druck:'3,0 bar'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  circuit({cat:'lueftung',g:'B',name:'Lüftungs-Ring Büro B (Zu-/Abluft)',r:0.16,dir:1,closed:true,
+    pts:[[Bx-4,5,Bz-3.5],[Bx+4,5,Bz-3.5],[Bx+4,5,Bz+3.5],[Bx-4,5,Bz+3.5]],
+    energie:{Medium:'Zu-/Abluft (Ring)',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja'},
+    wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'}});
+  pipe({cat:'elektro',g:'B',name:'Elektro-Steigleitung B',r:0.06,pts:[[Bx-5.5,0.5,Bz],[Bx-5.5,5.5,Bz]],
     energie:{Medium:'Elektro NS',Bemessungsstrom:'160 A',Spannung:'400 V','Unterverteilung':'EG + OG',PV:'Anschluss vorbereitet'},
     wartung:{'DGUV V3':'2025-05-10',Intervall:'4 Jahre (Büro)',Zuständig:'Elektrotechnik'},dokumente:[{name:'E-Plan_B.pdf',typ:'PDF'}]});
-  pipe({cat:'lueftung',g:'B',name:'Lüftung Büro B',r:0.2,pts:[[Bx+4,5,Bz],[Bx-4,5,Bz]],
-    energie:{Medium:'Zu-/Abluft',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja'},
-    wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'}});
+  [[Bx+5,2,Bz+3],[Bx+4,7.4,Bz]].forEach((p,i)=>pipe({cat:'elektro',g:'B',name:'Stromabgang B'+(i+1),r:0.04,pts:[[Bx-5.5,0.9,Bz],[Bx-5.5,0.9,p[2]],[p[0],0.9,p[2]],[p[0],p[1],p[2]]]}));
   // RLT Büro B (Lüftungs-Erzeuger) + Zuluftauslässe (Verbraucher)
   addEl(place(box(2,1.2,1.6,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx-4,Bh+1.3,Bz+3),{cat:'lueftung',g:'B',name:'RLT-Gerät Büro B',
     energie:{Typ:'Kompaktgerät mit WRG',Luftleistung:'1.800 m³/h','Elektr. Anschluss':'3 kW',Wärmerückgewinnung:'85 %'},
@@ -672,32 +741,74 @@ function buildDemo(){
     einspeisung:[{medium:'elektro',wert:400,einheit:'kW',quelle:'öffentliches Netz'},{medium:'wasser',wert:25,einheit:'m³/h',quelle:'öffentliches Netz'},{medium:'waerme',wert:220,einheit:'kW',quelle:'Fernwärmenetz'}],
     wartung:{'Zählerablesung':'monatlich','Letzte Prüfung':'2026-02-01',Intervall:'jährlich',Zuständig:'Energiemanagement'},
     dokumente:[{name:'Hausanschluss_Uebergabe.pdf',typ:'PDF'},{name:'Zaehlerkonzept.pdf',typ:'PDF'}]});
-  // Einspeiseleitungen vom öffentlichen Anschluss ins Grundstück
+  // Fernwärme als geschlossener Primärkreis (öffentlich → A → B → zurück)
+  circuit({cat:'waerme',g:'V',name:'Fernwärme-Primärkreis (Standort)',r:0.15,dir:1,closed:true,
+    pts:[[Ux,0.9,Uz],[Ux,0.9,-2],[-6,0.9,-1.2],[-6,0.9,0.8],[8,0.9,0.8],[8,0.9,-1.2],[Ux+3,0.9,-3],[Ux+3,0.9,Uz]],
+    energie:{Medium:'Fernwärme (Primärkreis)',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'220 kW','Quelle':'Fernwärmenetz'},
+    wartung:{'Letzte Prüfung':'2025-07-04',Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Trasse.pdf',typ:'PDF'},{name:'Fernwaerme_Uebergabe.pdf',typ:'PDF'}]});
+  // Strom-Einspeisung: öffentlich → Hauptverteilungen (endet an den Verteilern)
   pipe({cat:'elektro',g:'V',name:'Netzanschluss NS (öffentlich → Standort)',r:0.12,pts:[[Ux,0.6,Uz],[Ux,0.6,-1],[Ax-13,0.6,-1]],
     energie:{Medium:'Strom Einspeisung','Anschlussleistung':'400 kW',Spannung:'400 V','Quelle':'öffentliches Netz'},
     wartung:{'DGUV V3':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'Netzanschluss.pdf',typ:'PDF'}]});
-  pipe({cat:'wasser',g:'V',name:'Wasser-Hausanschluss (öffentlich → Standort)',r:0.1,pts:[[Ux,0.5,Uz],[Ux+2,0.5,-2],[8,0.5,-2]],
-    energie:{Medium:'Trinkwasser Einspeisung',Nennweite:'DN 80',Volumenstrom:'25 m³/h',Druck:'4 bar','Quelle':'öffentliches Netz','Wasserzähler':'Verbund'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Wasser_Hausanschluss.pdf',typ:'PDF'}]});
-  pipe({cat:'waerme',g:'V',name:'Fernwärme-Hausanschluss (öffentlich → Standort)',r:0.14,pts:[[Ux,0.7,Uz],[Ux-1,0.7,-3],[-6,0.9,-0.6]],
-    energie:{Medium:'Fernwärme Einspeisung',Nennweite:'DN 125','Anschlussleistung':'220 kW',Vorlauf:'90 °C','Quelle':'Fernwärmenetz','Wärmemengenzähler':'Verbund'},
-    wartung:{Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Uebergabe.pdf',typ:'PDF'}]});
-  // Leitungen quer über den Zwischenraum (A x=-6 ⇄ B x=8) auf y≈0.9
-  const gy=0.9;
-  pipe({cat:'waerme',g:'V',name:'Fernwärme Haupttrasse',r:0.16,pts:[[-6,gy,-0.6],[8,gy,-0.6]],
-    energie:{Medium:'Fernwärme',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'220 kW',Dämmung:'Kunststoffmantelrohr'},
-    wartung:{'Letzte Prüfung':'2025-07-04',Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Trasse.pdf',typ:'PDF'}]});
-  pipe({cat:'kaelte',g:'V',name:'Kälte-Verbindungsleitung',r:0.12,pts:[[-6,gy,0],[8,gy,0]],
-    energie:{Medium:'Kaltwasser',Nennweite:'DN 80',Vorlauf:'6 °C',Rücklauf:'12 °C','Quelle':'zentrale Kältemaschine Halle A'},
-    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_Trasse.pdf',typ:'PDF'}]});
-  pipe({cat:'druckluft',g:'V',name:'Druckluft-Verbindung',r:0.07,pts:[[-6,gy,0.5],[8,gy,0.5]],
-    energie:{Medium:'Druckluft',Nennweite:'DN 50',Betriebsdruck:'8 bar','Quelle':'Kompressorstation Halle A'},
-    wartung:{'Leckageprüfung':'2025-11-10',Intervall:'jährlich',Zuständig:'Energiemanagement'}});
-  pipe({cat:'elektro',g:'V',name:'Elektro-Erdkabel A→B',r:0.09,pts:[[-6,gy,0.9],[8,gy,0.9]],
-    energie:{Medium:'Elektro NS',Querschnitt:'4×95 mm²',Bemessungsstrom:'200 A','Verlegung':'im Kanal'},
+  pipe({cat:'elektro',g:'V',name:'Erdkabel → Büro B',r:0.09,pts:[[Ux,0.6,-1],[8,0.6,-1],[Bx-5.5,0.6,Bz]],
+    energie:{Medium:'Elektro NS',Querschnitt:'4×95 mm²',Bemessungsstrom:'200 A','Verlegung':'im Medienkanal'},
     wartung:{Intervall:'4 Jahre',Zuständig:'Elektrotechnik'},dokumente:[{name:'Erdkabel_AB.pdf',typ:'PDF'}]});
-  pipe({cat:'wasser',g:'V',name:'Trinkwasser-Verbindung',r:0.07,pts:[[-6,gy,-0.9],[8,gy,-0.9]],
-    energie:{Medium:'Trinkwasser',Nennweite:'DN 50','Quelle':'Hausanschluss Halle A'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  // Wasser-Einspeisung: öffentlich → beide Gebäude (endet an den Gebäuden)
+  pipe({cat:'wasser',g:'V',name:'Wasser-Hausanschluss (öffentlich → Standort)',r:0.1,pts:[[Ux,0.5,Uz],[Ux+1,0.5,-2],[8,0.5,-2],[Bx-5,0.5,Bz-2]],
+    energie:{Medium:'Trinkwasser Einspeisung',Nennweite:'DN 80',Volumenstrom:'25 m³/h',Druck:'4 bar','Quelle':'öffentliches Netz'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Wasser_Hausanschluss.pdf',typ:'PDF'}]});
+  pipe({cat:'wasser',g:'V',name:'Wasser → Halle A',r:0.08,pts:[[Ux+1,0.5,-2],[-6,0.5,-2],[Ax+13,0.5,-6]],
+    energie:{Medium:'Trinkwasser',Nennweite:'DN 65','Quelle':'Hausanschluss'},wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  // Kälte-/Druckluft-Verbund zwischen A (Erzeugung) und B (Bedarf) im Medienkanal
+  pipe({cat:'kaelte',g:'V',name:'Kälte-Verbund A → B',r:0.1,pts:[[Ax-12,0.9,Az-7],[-6,0.9,0],[8,0.9,0],[Bx+4,0.9,Bz]],
+    energie:{Medium:'Kaltwasser',Nennweite:'DN 80','Quelle':'Prozess-Kältemaschine Halle A'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaelte_Trasse.pdf',typ:'PDF'}]});
+  pipe({cat:'druckluft',g:'V',name:'Druckluft-Verbund A → B',r:0.06,pts:[[Ax-12,0.9,Az+7],[-6,0.9,0.5],[8,0.9,0.5],[Bx-4,0.9,Bz]],
+    energie:{Medium:'Druckluft',Nennweite:'DN 50','Quelle':'Kompressorstation Halle A'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+
+  // ---------- Innenwände, Fenster, Türen ----------
+  // Innenwände Halle A: abgetrennter Meister-/Büroraum in der Ecke
+  addEl(place(box(0.2,3.2,7,mat(0x9098a4,{rough:0.85})),Ax+5,1.6,Az-6.5),{cat:'innenwand',g:'A',name:'Innenwand Meisterbüro (längs)',
+    statik:{Material:'Gipskarton-Ständerwand',Dicke:'150 mm',Brandschutz:'F30'},energie:{'Schalldämmung':'44 dB'},
+    wartung:{Intervall:'nach Bedarf',Zuständig:'Standortmanagement'},dokumente:[{name:'Grundriss_Halle_A.dwg',typ:'DWG'}]});
+  addEl(place(box(9,3.2,0.2,mat(0x9098a4,{rough:0.85})),Ax+9.5,1.6,Az-3),{cat:'innenwand',g:'A',name:'Innenwand Meisterbüro (quer)',
+    statik:{Material:'Gipskarton-Ständerwand',Dicke:'150 mm',Brandschutz:'F30'},wartung:{Intervall:'nach Bedarf',Zuständig:'Standortmanagement'}});
+  // Fenster Halle A (Süd-Fassade, Lichtband)
+  [-8,-2,4].forEach((dx,i)=>addEl(place(box(4,1.6,0.12,mat(0x8fd0e6,{rough:0.1,metal:0.1,opacity:0.5})),Ax+dx,5.5,Az+Ad/2),{cat:'fenster',g:'A',name:'Lichtband-Fenster A-'+(i+1),
+    energie:{'U-Wert':'1,1 W/m²K',Verglasung:'2-fach',Fläche:'6,4 m²'},statik:{Rahmen:'Aluminium, thermisch getrennt'},
+    wartung:{'Letzte Reinigung':'2026-01',Intervall:'halbjährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Fensterliste_A.pdf',typ:'PDF'}]}));
+  // Tore / Türen Halle A
+  addEl(place(box(5,5,0.25,mat(0xc39a63,{rough:0.6,metal:0.2})),Ax-9,2.5,Az+Ad/2),{cat:'tuer',g:'A',name:'Sektionaltor Halle A',
+    energie:{Typ:'Sektionaltor, elektrisch',Breite:'5,0 m',Höhe:'5,0 m','U-Wert':'1,5 W/m²K'},
+    wartung:{'Letzte Prüfung (UVV)':'2025-09',Intervall:'jährlich',Zuständig:'Instandhaltung'},dokumente:[{name:'Tor_Wartung_A.pdf',typ:'PDF'}]});
+  addEl(place(box(1.1,2.1,0.15,mat(0xc39a63,{rough:0.6})),Ax+12,1.05,Az+Ad/2),{cat:'tuer',g:'A',name:'Fluchttür Halle A (Süd)',
+    energie:{Typ:'Fluchttür mit Panikbeschlag',Breite:'1,1 m',Fluchtweg:'ja'},statik:{Brandschutz:'T30-RS'},
+    wartung:{'Funktionsprüfung':'2026-02',Intervall:'jährlich',Zuständig:'Brandschutzbeauftragter'},dokumente:[{name:'Flucht-Rettungsplan.pdf',typ:'PDF'}]});
+  // Innenwände Büro B: Raumteilung EG
+  addEl(place(box(0.15,2.8,12,mat(0x9098a4,{rough:0.85})),Bx-1,1.4,Bz),{cat:'innenwand',g:'B',name:'Innenwand Flur B (längs)',
+    statik:{Material:'Kalksandstein',Dicke:'115 mm',Brandschutz:'F30'},energie:{'Schalldämmung':'47 dB'},
+    wartung:{Intervall:'nach Bedarf',Zuständig:'Standortmanagement'},dokumente:[{name:'Grundriss_Buero_B.dwg',typ:'DWG'}]});
+  addEl(place(box(6,2.8,0.15,mat(0x9098a4,{rough:0.85})),Bx+2,1.4,Bz-1),{cat:'innenwand',g:'B',name:'Innenwand Büro/WC B (quer)',
+    statik:{Material:'Gipskarton-Ständerwand',Dicke:'125 mm',Brandschutz:'F30'},wartung:{Intervall:'nach Bedarf',Zuständig:'Standortmanagement'}});
+  // Fenster Büro B (EG Süd/Nord)
+  [[-4,Bz+Bd/2],[0,Bz+Bd/2],[4,Bz+Bd/2],[-4,Bz-Bd/2],[4,Bz-Bd/2]].forEach((c,i)=>addEl(place(box(2.2,1.4,0.12,mat(0x8fd0e6,{rough:0.1,opacity:0.5})),Bx+c[0],1.6,c[1]),{cat:'fenster',g:'B',name:'Bürofenster B-'+(i+1),
+    energie:{'U-Wert':'0,9 W/m²K',Verglasung:'3-fach',Sonnenschutz:'außenliegend',Fläche:'3,1 m²'},statik:{Rahmen:'Kunststoff'},
+    wartung:{Intervall:'halbjährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Fensterliste_B.pdf',typ:'PDF'}]}));
+  // Fenster Büro B (OG Süd)
+  [-3,3].forEach((dx,i)=>addEl(place(box(2.2,1.2,0.12,mat(0x8fd0e6,{rough:0.1,opacity:0.5})),Bx+dx,4.4,Bz+Bd/2),{cat:'fenster',g:'B',name:'Bürofenster B-OG-'+(i+1),
+    energie:{'U-Wert':'0,9 W/m²K',Verglasung:'3-fach',Fläche:'2,6 m²'},
+    wartung:{Intervall:'halbjährlich',Zuständig:'Standortmanagement'}}));
+  // Türen Büro B
+  addEl(place(box(1.6,2.2,0.15,mat(0xc39a63,{rough:0.5,metal:0.1})),Bx,1.1,Bz-Bd/2),{cat:'tuer',g:'B',name:'Haupteingang Büro B',
+    energie:{Typ:'Automatik-Glastür',Breite:'1,6 m','U-Wert':'1,4 W/m²K'},statik:{Rahmen:'Aluminium'},
+    wartung:{'Funktionsprüfung':'2026-01',Intervall:'jährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Tueren_B.pdf',typ:'PDF'}]});
+  addEl(place(box(0.9,2.1,0.12,mat(0xc39a63,{rough:0.5})),Bx-1,1.05,Bz+3),{cat:'tuer',g:'B',name:'Bürotür B-1 (F30)',
+    energie:{Typ:'Zimmertür',Breite:'0,9 m'},statik:{Brandschutz:'T30'},
+    wartung:{Intervall:'2 Jahre',Zuständig:'Standortmanagement'},dokumente:[{name:'Tueren_B.pdf',typ:'PDF'}]});
+  addEl(place(box(0.9,2.1,0.12,mat(0xc39a63,{rough:0.5})),Bx+2,1.05,Bz-4),{cat:'tuer',g:'B',name:'WC-Tür B (barrierefrei)',
+    energie:{Typ:'WC-Tür',Breite:'0,9 m',Barrierefrei:'ja'},
+    wartung:{Intervall:'2 Jahre',Zuständig:'Standortmanagement'}});
 
   document.getElementById('drop').classList.add('hide');
   switchTo('demo');
@@ -734,8 +845,11 @@ function buildFilters(){
   });
 }
 function applyDemoVis(){
-  elements.forEach(m=>{ m.visible = catOn[m.userData.kategorie]!==false && bldOn[m.userData.gebaeude]!==false; });
-  if(selected && !selected.visible) deselect();
+  elements.forEach(m=>{ m.visible = catOn[m.userData.kategorie]!==false && bldOn[m.userData.gebaeude]!==false && !hidden.has(m.userData.id); });
+  // Ausgewähltes Bauteil, das durch einen Kategorie-/Gebäudefilter verschwindet, abwählen –
+  // ein einzeln „ausgeblendetes" bleibt ausgewählt (damit man es wieder einblenden kann).
+  if(selected && !selected.visible && !hidden.has(selected.userData.id)) deselect();
+  if(typeof applyCircuitHi==='function') applyCircuitHi();
 }
 
 // ============================================================
@@ -762,6 +876,7 @@ function select(mesh){
   document.getElementById('iName').textContent=d.name||d.layer||'Bauteil';
   document.getElementById('iBld').textContent=d.gebLabel||'';
   let h='';
+  if(d.id && mode==='demo'){ h+='<div style="padding:10px 16px 2px"><button class="btn" id="btnHideEl" style="width:100%">'+(hidden.has(d.id)?'👁 Wieder einblenden':'🚫 Bauteil ausblenden')+'</button></div>'; }
   if(d.statik||d.energie||d.wartung){
     DEPT.forEach(dep=>{ const o=d[dep.k]; if(!o)return;
       h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:'+dep.c+'"></span>'+dep.label+'</div><div class="dept-b">';
@@ -781,6 +896,7 @@ function select(mesh){
   }
   document.getElementById('iBody').innerHTML=h;
   document.querySelectorAll('#iBody .doc[data-di]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-di'); const dd=selected&&selected.userData.dokumente?selected.userData.dokumente[i]:null; if(dd)openDocument(dd,selected.userData); }); });
+  const hb=document.getElementById('btnHideEl'); if(hb)hb.addEventListener('click',()=>{ if(selected)toggleHideElement(selected); });
   document.getElementById('info').classList.add('open');
 }
 function deselect(){ if(selected) hl(selected,false); selected=null; document.getElementById('info').classList.remove('open'); }
@@ -1427,9 +1543,64 @@ function openDocumentHtml(docObj,ud){
   w.document.close();
 }
 
+// ============================================================
+//  Kreisläufe: Fließanimation, Hervorhebung; Render-Stile; Ein-/Ausblenden
+// ============================================================
+function updateFlow(){ if(!flowOn)return; for(const c of circuits){ if(c.mesh.visible) c.tex.offset.x -= c.speed*c.dir; } }
+function applyCircuitHi(){
+  circuits.forEach(c=>{ const on=(circuitHi===null||circuitHi===c.id);
+    c.mesh.material.transparent=!on; c.mesh.material.opacity=on?1:0.1; c.mesh.material.depthWrite=on; c.mesh.material.needsUpdate=true; });
+}
+function renderCircuitList(){
+  const box=document.getElementById('circuitList'); if(!box)return; box.innerHTML='';
+  if(!circuits.length){ box.innerHTML='<div class="empty">–</div>'; return; }
+  circuits.forEach(c=>{ const cat=CATS[c.medium]||{color:0xcccccc};
+    const row=document.createElement('div'); row.className='flt'; row.style.cursor='pointer';
+    row.innerHTML='<span class="swatch" style="background:'+hex(cat.color)+'"></span><span class="name" title="'+esc(c.name)+'">'+esc(c.name)+'</span><span class="count">'+(circuitHi===c.id?'●':'○')+'</span>';
+    row.addEventListener('click',()=>{ circuitHi=(circuitHi===c.id)?null:c.id; applyCircuitHi(); renderCircuitList(); });
+    box.appendChild(row);
+  });
+}
+function applyRenderStyle(){
+  const s=renderStyle;
+  if(s==='realistisch'){ scene.background=new THREE.Color(0x9fc0e8); scene.fog=new THREE.Fog(0x9fc0e8,150,440); sun.intensity=1.2; hemi.intensity=0.55; ground.material.color.setHex(0x3f5a3a); }
+  else if(s==='roentgen'){ scene.background=new THREE.Color(0x0b1017); scene.fog=null; sun.intensity=0.5; hemi.intensity=1.05; ground.material.color.setHex(0x121b26); }
+  else { scene.background=new THREE.Color(0x0f1720); scene.fog=new THREE.Fog(0x0f1720,120,320); sun.intensity=0.85; hemi.intensity=0.8; ground.material.color.setHex(0x121b26); }
+  ground.material.needsUpdate=true;
+  elements.forEach(m=>{ const k=m.userData.kategorie, base=m.userData._opacity;
+    if(k==='huelle'||k==='innenwand'){ if(base==null)return; let op=base;
+      if(s==='roentgen') op=Math.min(base,0.1);
+      else if(s==='realistisch') op=(k==='huelle'?Math.min(1,base+0.4):Math.min(1,base+0.25));
+      m.material.opacity=op; m.material.transparent=op<1; m.material.needsUpdate=true; }
+    else if(k==='fenster'){ m.material.opacity=(s==='realistisch'?0.32:0.5); m.material.transparent=true; m.material.needsUpdate=true; }
+  });
+}
+function toggleHideElement(mesh){ if(!mesh||!mesh.userData.id)return; const id=mesh.userData.id;
+  if(hidden.has(id))hidden.delete(id); else hidden.add(id);
+  applyDemoVis(); renderHiddenList();
+  if(selected===mesh) select(mesh);
+}
+function renderHiddenList(){
+  const t=document.getElementById('hiddenTitle'), box=document.getElementById('hiddenList'); if(!box)return; box.innerHTML='';
+  const list=elements.filter(m=>hidden.has(m.userData.id));
+  if(!list.length){ if(t)t.style.display='none'; return; }
+  if(t)t.style.display='';
+  const all=document.createElement('div'); all.className='flt'; all.style.cursor='pointer';
+  all.innerHTML='<span class="name" style="color:var(--accent)">↺ Alle wieder einblenden ('+list.length+')</span>';
+  all.addEventListener('click',()=>{ hidden.clear(); applyDemoVis(); renderHiddenList(); if(selected)select(selected); });
+  box.appendChild(all);
+  list.forEach(m=>{ const row=document.createElement('div'); row.className='flt'; row.style.cursor='pointer';
+    row.innerHTML='<span class="name" title="'+esc(m.userData.name)+'">'+esc(m.userData.name)+'</span><span class="count">einblenden</span>';
+    row.addEventListener('click',()=>{ hidden.delete(m.userData.id); applyDemoVis(); renderHiddenList(); if(selected===m)select(m); });
+    box.appendChild(row);
+  });
+}
+(function(){ const f=document.getElementById('flowToggle'); if(f)f.addEventListener('change',e=>{ flowOn=e.target.checked; });
+  const r=document.getElementById('renderStyle'); if(r)r.addEventListener('change',e=>{ renderStyle=e.target.value; applyRenderStyle(); }); })();
+
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
-(function loop(){requestAnimationFrame(loop);updateMeasureLabels();renderer.render(scene,camera);})();
+(function loop(){requestAnimationFrame(loop);updateFlow();updateMeasureLabels();renderer.render(scene,camera);})();
 
 // Start: Beispiel laden + gespeicherte Standortmodelle vom Server holen
 buildDemo();
