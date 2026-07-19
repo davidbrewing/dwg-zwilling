@@ -89,17 +89,19 @@
   #views button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;cursor:pointer}
   #views button:hover{border-color:var(--accent);background:#20303f}
   input[type=file]{display:none}
-  #drawPanel{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:none;flex-direction:column;gap:9px;background:rgba(15,23,32,.93);border:1px solid var(--line);padding:12px 14px;border-radius:12px;backdrop-filter:blur(6px);z-index:7;width:min(460px,92%);box-shadow:0 12px 34px rgba(0,0,0,.45)}
-  #drawPanel.open{display:flex}
-  #drawPanel .dp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  #drawPanel .dp-row b{font-size:13.5px}
-  #drawPanel label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
-  #drawPanel select,#drawPanel input[type=number],#drawPanel input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px}
-  #drawPanel input[type=number]{width:74px}
-  #drawPanel input[type=text]{flex:1;min-width:130px}
-  #drawPanel .dp-hint{font-size:11.5px;color:var(--muted)}
+  .toolpanel{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:none;flex-direction:column;gap:9px;background:rgba(15,23,32,.93);border:1px solid var(--line);padding:12px 14px;border-radius:12px;backdrop-filter:blur(6px);z-index:7;width:min(460px,92%);box-shadow:0 12px 34px rgba(0,0,0,.45)}
+  .toolpanel.open{display:flex}
+  .toolpanel .dp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .toolpanel .dp-row b{font-size:13.5px}
+  .toolpanel label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .toolpanel select,.toolpanel input[type=number],.toolpanel input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px}
+  .toolpanel input[type=number]{width:74px}
+  .toolpanel input[type=text]{flex:1;min-width:130px}
+  .toolpanel .dp-hint{font-size:11.5px;color:var(--muted)}
   .dp-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 3px;flex:0 0 auto}
   .dp-del:hover{color:#e0674f}
+  #measureLabels{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden}
+  #measureLabels .mlabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,23,32,.92);border:1px solid var(--accent);color:var(--txt);font-size:12px;font-weight:600;padding:2px 8px;border-radius:11px;white-space:nowrap}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
 </style>
@@ -114,6 +116,7 @@
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
     <button class="btn" id="btnExport">⤒ Exportieren</button>
     <button class="btn" id="btnDraw">✏ Leitung</button>
+    <button class="btn" id="btnMeasure">📏 Messen</button>
     <button class="btn primary" id="btnReset">⟲ Ansicht</button>
     <input type="file" id="file" accept=".dxf,.dwg">
   </div>
@@ -180,7 +183,7 @@
     </div>
 
     <!-- Zeichen-Panel für Leitungen -->
-    <div id="drawPanel">
+    <div id="drawPanel" class="toolpanel">
       <div class="dp-row"><b>✏ Leitung zeichnen</b><span class="dp-hint" id="drawHint" style="margin-left:auto">Punkte im Grundriss klicken …</span></div>
       <div class="dp-row">
         <label>Medium
@@ -201,6 +204,26 @@
         <button class="btn" id="drawUndo">↶ Punkt zurück</button>
         <button class="btn" id="drawCancel">Abbrechen</button>
         <button class="btn primary" id="drawDone">✓ Fertig</button>
+      </div>
+    </div>
+
+    <!-- Bemaßungs-Panel -->
+    <div id="measurePanel" class="toolpanel">
+      <div class="dp-row"><b>📏 Bemaßung</b><span class="dp-hint" id="measHint" style="margin-left:auto">Ersten Punkt klicken …</span></div>
+      <div class="dp-row" id="measUnitRow" style="display:none">
+        <label>Zeichnungseinheit
+          <select id="measUnit">
+            <option value="mm">Millimeter</option>
+            <option value="cm">Zentimeter</option>
+            <option value="m">Meter</option>
+          </select>
+        </label>
+        <span class="dp-hint">bei hochgeladenen Plänen – damit der Abstand in Metern stimmt</span>
+      </div>
+      <div class="dp-row"><span id="measResult" style="font-size:14px">Abstand: –</span></div>
+      <div class="dp-row">
+        <button class="btn" id="measClear">Alle löschen</button>
+        <button class="btn primary" id="measDone">Schließen</button>
       </div>
     </div>
 
@@ -334,6 +357,8 @@ function refreshModelSel(){
 }
 function switchTo(t){
   if(typeof drawMode!=='undefined'&&drawMode) toggleDraw(false);
+  if(typeof measureMode!=='undefined'&&measureMode) toggleMeasure(false);
+  if(typeof clearMeasures==='function') clearMeasures();
   if(t==='demo'){ if(!demoGroup)return; mode='demo'; demoGroup.visible=true; if(dxfGroup)dxfGroup.visible=false;
     setUIMode('demo'); buildFilters(); applyDemoVis(); deselect();
     document.getElementById('fileName').textContent='Beispiel: Industriestandort';
@@ -567,7 +592,7 @@ function pickAt(e){
   return hit.length?hit[0].object:null;
 }
 let moved=false;
-canvas.addEventListener('click',e=>{ if(moved)return; if(drawMode){addDrawPoint(e);return;} const o=pickAt(e); o?select(o):deselect(); });
+canvas.addEventListener('click',e=>{ if(moved)return; if(measureMode){addMeasurePoint(e);return;} if(drawMode){addDrawPoint(e);return;} const o=pickAt(e); o?select(o):deselect(); });
 function hl(mesh,on){ if(!mesh.material.emissive)return; if(on){mesh.material.emissive.setHex(0x2b6bd6);mesh.material.emissiveIntensity=0.9;} else {mesh.material.emissive.copy(mesh.userData._e||new THREE.Color(0));mesh.material.emissiveIntensity=1;} }
 function select(mesh){
   if(selected) hl(selected,false);
@@ -650,7 +675,7 @@ let dragging=false,panning=false,lx=0,ly=0;
 canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
 canvas.addEventListener('pointerup',()=>dragging=false);
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('pointermove',e=>{ if(!dragging){ if(drawMode){canvas.style.cursor='crosshair';updatePreview(groundPoint(e));return;} canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
+canvas.addEventListener('pointermove',e=>{ if(!dragging){ if(measureMode){canvas.style.cursor='crosshair';if(measurePts.length===1){measureHover=measurePoint(e);updateMeasurePreview();}return;} if(drawMode){canvas.style.cursor='crosshair';updatePreview(groundPoint(e));return;} canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
   const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
   if(panning){const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);}
   else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));} applyCam(); });
@@ -780,6 +805,7 @@ function addDrawPoint(e){
   document.getElementById('drawHint').textContent=drawPts.length+' Punkt(e) · weiter klicken oder „✓ Fertig"';
 }
 function toggleDraw(on){
+  if(!!on && typeof measureMode!=='undefined' && measureMode) toggleMeasure(false);
   drawMode=!!on;
   document.getElementById('drawPanel').classList.toggle('open',drawMode);
   document.getElementById('btnDraw').classList.toggle('primary',drawMode);
@@ -859,9 +885,97 @@ document.getElementById('drawnLoad').onclick=()=>document.getElementById('drawnF
 document.getElementById('drawnFile').onchange=e=>{ if(e.target.files[0])loadDrawn(e.target.files[0]); e.target.value=''; };
 addEventListener('keydown',e=>{ if(!drawMode)return; if(e.key==='Enter'){e.preventDefault();finishPipe();} else if(e.key==='Escape'){toggleDraw(false);} else if(e.key==='Backspace'){e.preventDefault();drawPts.pop();updatePreview();} });
 
+// ============================================================
+//  Bemaßung (Abstand zwischen zwei Punkten messen)
+// ============================================================
+const measureGroup=new THREE.Group(); scene.add(measureGroup);
+let measureMode=false, measurePts=[], measures=[], measPending=null, measurePreview=null, measureHover=null, measureUnit='mm';
+const measureLabels=document.createElement('div'); measureLabels.id='measureLabels'; document.getElementById('stage').appendChild(measureLabels);
+const measurePreviewLabel=document.createElement('div'); measurePreviewLabel.className='mlabel'; measurePreviewLabel.style.display='none'; measurePreviewLabel.style.borderColor='#8ecbff'; measureLabels.appendChild(measurePreviewLabel);
+
+// Realen Abstand aus Szenen-Abstand ableiten (Demo = Meter; DXF = zurückskaliert × Einheit)
+function realMeters(sceneDist){
+  if(mode==='demo') return sceneDist;
+  const nativ = transform ? sceneDist/transform.s : sceneDist;
+  const f = ({mm:0.001,cm:0.01,m:1})[measureUnit] || 0.001;
+  return nativ*f;
+}
+function fmtDist(sceneDist){ const m=realMeters(sceneDist); return m>=1 ? m.toFixed(2)+' m' : (m*100).toFixed(1)+' cm'; }
+// Klickpunkt: erst echte Geometrie treffen, sonst Bodenebene
+function measurePoint(e){
+  const r=canvas.getBoundingClientRect();
+  ptr.x=((e.clientX-r.left)/r.width)*2-1; ptr.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,camera);
+  const arr=(mode==='demo'?elements:dxfMeshes).concat(drawnMeshes).filter(m=>m.visible); arr.push(ground);
+  const hit=ray.intersectObjects(arr,false);
+  return hit.length ? hit[0].point.clone() : groundPoint(e);
+}
+function measMarker(p){ const s=new THREE.Mesh(new THREE.SphereGeometry(0.4,12,12),new THREE.MeshBasicMaterial({color:0x4aa3ff})); s.position.copy(p); measureGroup.add(s); return s; }
+function measLine(a,b){ const g=new THREE.BufferGeometry().setFromPoints([a,b]); const l=new THREE.Line(g,new THREE.LineBasicMaterial({color:0x4aa3ff})); measureGroup.add(l); return l; }
+function disposeObj(o){ if(!o)return; measureGroup.remove(o); if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }
+function clearMeasurePreview(){ if(measurePreview){scene.remove(measurePreview);measurePreview.geometry.dispose();measurePreview.material.dispose();measurePreview=null;} if(measurePreviewLabel)measurePreviewLabel.style.display='none'; measureHover=null; }
+function updateMeasurePreview(){
+  if(measurePreview){scene.remove(measurePreview);measurePreview.geometry.dispose();measurePreview.material.dispose();measurePreview=null;}
+  if(!(measureMode&&measurePts.length===1&&measureHover)){ if(measurePreviewLabel)measurePreviewLabel.style.display='none'; return; }
+  const g=new THREE.BufferGeometry().setFromPoints([measurePts[0],measureHover]);
+  measurePreview=new THREE.Line(g,new THREE.LineBasicMaterial({color:0x8ecbff})); scene.add(measurePreview);
+  if(measurePreviewLabel){ measurePreviewLabel.style.display=''; measurePreviewLabel.textContent=fmtDist(measurePts[0].distanceTo(measureHover)); }
+}
+function addMeasurePoint(e){
+  const p=measurePoint(e); if(!p) return;
+  if(measurePts.length===0){
+    measurePts.push(p); measPending={aMarker:measMarker(p)};
+    document.getElementById('measHint').textContent='Zweiten Punkt klicken …';
+  } else {
+    measurePts.push(p);
+    const a=measurePts[0], b=measurePts[1], dist=a.distanceTo(b);
+    const el=document.createElement('div'); el.className='mlabel'; el.textContent=fmtDist(dist);
+    measureLabels.appendChild(el);
+    measures.push({a:a.clone(),b:b.clone(),dist:dist,line:measLine(a,b),aMarker:measPending.aMarker,bMarker:measMarker(b),el:el});
+    document.getElementById('measResult').textContent='Abstand: '+fmtDist(dist);
+    document.getElementById('measHint').textContent='Nächste Messung: ersten Punkt klicken …';
+    measurePts.length=0; measPending=null; clearMeasurePreview();
+  }
+}
+function clearMeasures(){
+  measures.forEach(mz=>{ disposeObj(mz.line); disposeObj(mz.aMarker); disposeObj(mz.bMarker); if(mz.el&&mz.el.parentNode)mz.el.parentNode.removeChild(mz.el); });
+  measures.length=0;
+  if(measPending)disposeObj(measPending.aMarker);
+  measPending=null; measurePts.length=0; clearMeasurePreview();
+  const rEl=document.getElementById('measResult'); if(rEl)rEl.textContent='Abstand: –';
+  const hEl=document.getElementById('measHint'); if(hEl)hEl.textContent='Ersten Punkt klicken …';
+}
+function toggleMeasure(on){
+  measureMode=!!on;
+  if(measureMode && typeof drawMode!=='undefined' && drawMode) toggleDraw(false);
+  document.getElementById('measurePanel').classList.toggle('open',measureMode);
+  document.getElementById('btnMeasure').classList.toggle('primary',measureMode);
+  document.getElementById('measUnitRow').style.display=(measureMode&&mode!=='demo')?'flex':'none';
+  if(measureMode){ document.getElementById('measHint').textContent='Ersten Punkt klicken …'; }
+  else { if(measPending)disposeObj(measPending.aMarker); measPending=null; measurePts.length=0; clearMeasurePreview(); canvas.style.cursor='default'; }
+}
+function updateMeasureLabels(){
+  if(!measures.length && !(measurePreviewLabel&&measurePreviewLabel.style.display!=='none')) return;
+  const rect=canvas.getBoundingClientRect();
+  const project=(p,el)=>{ const v=p.clone().project(camera); if(v.z>1){el.style.display='none';return;} el.style.display=''; el.style.left=((v.x*0.5+0.5)*rect.width)+'px'; el.style.top=((-v.y*0.5+0.5)*rect.height)+'px'; };
+  measures.forEach(mz=>project(mz.a.clone().add(mz.b).multiplyScalar(0.5),mz.el));
+  if(measurePts.length===1 && measureHover && measurePreviewLabel && measurePreviewLabel.style.display!=='none') project(measurePts[0].clone().add(measureHover).multiplyScalar(0.5),measurePreviewLabel);
+}
+document.getElementById('btnMeasure').onclick=()=>toggleMeasure(!measureMode);
+document.getElementById('measDone').onclick=()=>toggleMeasure(false);
+document.getElementById('measClear').onclick=clearMeasures;
+document.getElementById('measUnit').onchange=e=>{ measureUnit=e.target.value; measures.forEach(mz=>mz.el.textContent=fmtDist(mz.dist)); if(measures.length)document.getElementById('measResult').textContent='Abstand: '+fmtDist(measures[measures.length-1].dist); updateMeasurePreview(); };
+addEventListener('keydown',e=>{ if(!measureMode)return;
+  if(e.key==='Escape'){ toggleMeasure(false); }
+  else if(e.key==='Backspace'){ e.preventDefault();
+    if(measPending){ disposeObj(measPending.aMarker); measPending=null; measurePts.length=0; clearMeasurePreview(); document.getElementById('measHint').textContent='Ersten Punkt klicken …'; }
+    else if(measures.length){ const mz=measures.pop(); disposeObj(mz.line); disposeObj(mz.aMarker); disposeObj(mz.bMarker); if(mz.el.parentNode)mz.el.parentNode.removeChild(mz.el); document.getElementById('measResult').textContent=measures.length?('Abstand: '+fmtDist(measures[measures.length-1].dist)):'Abstand: –'; }
+  }
+});
+
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
-(function loop(){requestAnimationFrame(loop);renderer.render(scene,camera);})();
+(function loop(){requestAnimationFrame(loop);updateMeasureLabels();renderer.render(scene,camera);})();
 
 // Start: Beispiel laden
 buildDemo();
