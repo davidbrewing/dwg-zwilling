@@ -89,6 +89,17 @@
   #views button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;cursor:pointer}
   #views button:hover{border-color:var(--accent);background:#20303f}
   input[type=file]{display:none}
+  #drawPanel{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:none;flex-direction:column;gap:9px;background:rgba(15,23,32,.93);border:1px solid var(--line);padding:12px 14px;border-radius:12px;backdrop-filter:blur(6px);z-index:7;width:min(460px,92%);box-shadow:0 12px 34px rgba(0,0,0,.45)}
+  #drawPanel.open{display:flex}
+  #drawPanel .dp-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #drawPanel .dp-row b{font-size:13.5px}
+  #drawPanel label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  #drawPanel select,#drawPanel input[type=number],#drawPanel input[type=text]{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:13px}
+  #drawPanel input[type=number]{width:74px}
+  #drawPanel input[type=text]{flex:1;min-width:130px}
+  #drawPanel .dp-hint{font-size:11.5px;color:var(--muted)}
+  .dp-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 3px;flex:0 0 auto}
+  .dp-del:hover{color:#e0674f}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
 </style>
@@ -102,6 +113,7 @@
     <select id="modelSel" class="sel" title="Modell wählen"><option value="demo">🏭 Beispielmodell</option></select>
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
     <button class="btn" id="btnExport">⤒ Exportieren</button>
+    <button class="btn" id="btnDraw">✏ Leitung</button>
     <button class="btn primary" id="btnReset">⟲ Ansicht</button>
     <input type="file" id="file" accept=".dxf,.dwg">
   </div>
@@ -123,6 +135,16 @@
       <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
       <div class="sec-title">Layer</div>
       <div id="layers"><div class="empty">–</div></div>
+    </div>
+    <!-- Gezeichnete Leitungen (beide Modelle) -->
+    <div id="drawnPanel" style="display:none">
+      <div class="sec-title">Gezeichnete Leitungen</div>
+      <div id="fltDrawn"><div class="empty">Noch keine Leitung. Klicke „✏ Leitung", um zu zeichnen.</div></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn" id="drawnSave" style="flex:1">⤒ Speichern</button>
+        <button class="btn" id="drawnLoad" style="flex:1">⤓ Laden</button>
+      </div>
+      <input type="file" id="drawnFile" accept=".json">
     </div>
   </div>
 
@@ -155,6 +177,31 @@
       <button data-v="left">Links</button>
       <button data-v="right">Rechts</button>
       <button data-v="back">Hinten</button>
+    </div>
+
+    <!-- Zeichen-Panel für Leitungen -->
+    <div id="drawPanel">
+      <div class="dp-row"><b>✏ Leitung zeichnen</b><span class="dp-hint" id="drawHint" style="margin-left:auto">Punkte im Grundriss klicken …</span></div>
+      <div class="dp-row">
+        <label>Medium
+          <select id="drawMedium">
+            <option value="heizung">Heizung</option>
+            <option value="waerme">Fernwärme</option>
+            <option value="kaelte">Kälte</option>
+            <option value="wasser" selected>Wasser</option>
+            <option value="druckluft">Druckluft</option>
+            <option value="lueftung">Lüftung</option>
+            <option value="elektro">Elektro</option>
+          </select>
+        </label>
+        <label>Höhe (m)<input type="number" id="drawHeight" value="6" step="0.5" min="0"></label>
+        <input type="text" id="drawName" placeholder="Bezeichnung (optional)">
+      </div>
+      <div class="dp-row">
+        <button class="btn" id="drawUndo">↶ Punkt zurück</button>
+        <button class="btn" id="drawCancel">Abbrechen</button>
+        <button class="btn primary" id="drawDone">✓ Fertig</button>
+      </div>
     </div>
 
     <div id="info">
@@ -286,6 +333,7 @@ function refreshModelSel(){
   s.value=(mode==='dxf')?'uploaded':'demo';
 }
 function switchTo(t){
+  if(typeof drawMode!=='undefined'&&drawMode) toggleDraw(false);
   if(t==='demo'){ if(!demoGroup)return; mode='demo'; demoGroup.visible=true; if(dxfGroup)dxfGroup.visible=false;
     setUIMode('demo'); buildFilters(); applyDemoVis(); deselect();
     document.getElementById('fileName').textContent='Beispiel: Industriestandort';
@@ -297,6 +345,8 @@ function switchTo(t){
     document.getElementById('stats').innerHTML='<b>'+parsed.stats.entities+'</b> Objekte · <b>'+parsed.stats.layers+'</b> Layer';
     fitCamera(60);
   }
+  document.getElementById('drawnPanel').style.display='';
+  renderDrawnList(); applyDrawnVis();
   refreshModelSel();
 }
 
@@ -512,12 +562,12 @@ function pickAt(e){
   const r=canvas.getBoundingClientRect();
   ptr.x=((e.clientX-r.left)/r.width)*2-1; ptr.y=-((e.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(ptr,camera);
-  const arr=(mode==='demo'?elements:dxfMeshes).filter(m=>m.visible);
+  const arr=(mode==='demo'?elements:dxfMeshes).concat(drawnMeshes).filter(m=>m.visible);
   const hit=ray.intersectObjects(arr,false);
   return hit.length?hit[0].object:null;
 }
 let moved=false;
-canvas.addEventListener('click',e=>{ if(moved)return; const o=pickAt(e); o?select(o):deselect(); });
+canvas.addEventListener('click',e=>{ if(moved)return; if(drawMode){addDrawPoint(e);return;} const o=pickAt(e); o?select(o):deselect(); });
 function hl(mesh,on){ if(!mesh.material.emissive)return; if(on){mesh.material.emissive.setHex(0x2b6bd6);mesh.material.emissiveIntensity=0.9;} else {mesh.material.emissive.copy(mesh.userData._e||new THREE.Color(0));mesh.material.emissiveIntensity=1;} }
 function select(mesh){
   if(selected) hl(selected,false);
@@ -600,7 +650,7 @@ let dragging=false,panning=false,lx=0,ly=0;
 canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
 canvas.addEventListener('pointerup',()=>dragging=false);
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('pointermove',e=>{ if(!dragging){canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
+canvas.addEventListener('pointermove',e=>{ if(!dragging){ if(drawMode){canvas.style.cursor='crosshair';updatePreview(groundPoint(e));return;} canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
   const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
   if(panning){const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);}
   else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));} applyCam(); });
@@ -678,6 +728,136 @@ document.getElementById('btnOpen').addEventListener('dblclick',()=>drop.classLis
 ['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
 ['dragleave','drop'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');if(ev==='drop')drop.classList.add('hide');}));
 stage.addEventListener('drop',e=>{if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);});
+
+// ============================================================
+//  Leitungen im 3D-Modell zeichnen (2D-Route + Höhenlage)
+// ============================================================
+const drawnGroup=new THREE.Group(); scene.add(drawnGroup);
+let drawMode=false, drawPts=[], drawPreview=null, drawIdc=0;
+const drawnMeshes=[], drawnPipes=[];
+function currentModelKey(){ return mode==='demo' ? 'demo' : ('upload:'+(uploadName||'')); }
+// Bodenpunkt (y=0) aus Mausposition über eine mathematische Ebene bestimmen
+function groundPoint(e){
+  const r=canvas.getBoundingClientRect();
+  ptr.x=((e.clientX-r.left)/r.width)*2-1; ptr.y=-((e.clientY-r.top)/r.height)*2+1;
+  ray.setFromCamera(ptr,camera);
+  const out=new THREE.Vector3();
+  return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),out)?out:null;
+}
+function pipeLength(v){ let s=0; for(let i=0;i<v.length-1;i++) s+=v[i].distanceTo(v[i+1]); return s; }
+function makeDrawnPipe(def){
+  const cat=CATS[def.medium]||CATS.wasser, h=def.height||0;
+  const v=def.pts.map(p=>new THREE.Vector3(p[0],h,p[1]));
+  if(v.length<2) return null;
+  const curve=new THREE.CatmullRomCurve3(v,false);
+  const geo=new THREE.TubeGeometry(curve,Math.max(16,(v.length-1)*12),def.r||0.16,12,false);
+  const mesh=new THREE.Mesh(geo,mat(cat.color,{rough:0.3,metal:0.5}));
+  mesh.castShadow=true; mesh.receiveShadow=true;
+  mesh.userData={
+    id:'LTG-'+String(def.id).padStart(3,'0'),
+    name:def.name||('Leitung '+cat.label), kategorie:def.medium, katLabel:cat.label,
+    gebLabel:'Nachträglich gezeichnet',
+    energie:{Medium:cat.label,'Höhenlage':h.toFixed(2)+' m','Länge (ca.)':pipeLength(v).toFixed(1)+' m',Stützpunkte:v.length},
+    dokumente:[], _e:new THREE.Color(0), _drawn:true, _model:def.model, _def:def
+  };
+  drawnGroup.add(mesh); drawnMeshes.push(mesh); return mesh;
+}
+function updatePreview(hover){
+  if(drawPreview){ scene.remove(drawPreview); drawPreview.geometry.dispose(); drawPreview.material.dispose(); drawPreview=null; }
+  if(!drawMode) return;
+  const h=parseFloat(document.getElementById('drawHeight').value)||0;
+  const pts=drawPts.map(p=>new THREE.Vector3(p.x,h,p.z));
+  if(hover) pts.push(new THREE.Vector3(hover.x,h,hover.z));
+  if(pts.length<2) return;
+  const cat=CATS[document.getElementById('drawMedium').value]||CATS.wasser;
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  drawPreview=new THREE.Line(g,new THREE.LineBasicMaterial({color:cat.color}));
+  scene.add(drawPreview);
+}
+function addDrawPoint(e){
+  const p=groundPoint(e); if(!p) return;
+  drawPts.push(p); updatePreview();
+  document.getElementById('drawHint').textContent=drawPts.length+' Punkt(e) · weiter klicken oder „✓ Fertig"';
+}
+function toggleDraw(on){
+  drawMode=!!on;
+  document.getElementById('drawPanel').classList.toggle('open',drawMode);
+  document.getElementById('btnDraw').classList.toggle('primary',drawMode);
+  if(drawMode){ theta=0; phi=0.06; applyCam(); document.getElementById('drawHint').textContent='Punkte im Grundriss klicken …'; }
+  else { drawPts.length=0; updatePreview(); canvas.style.cursor='default'; }
+}
+function finishPipe(){
+  if(drawPts.length<2){ toast('Bitte mindestens zwei Punkte klicken.',true); return; }
+  const def={ id:++drawIdc, medium:document.getElementById('drawMedium').value,
+    height:parseFloat(document.getElementById('drawHeight').value)||0,
+    name:document.getElementById('drawName').value.trim(),
+    pts:drawPts.map(p=>[+p.x.toFixed(3),+p.z.toFixed(3)]),
+    model:currentModelKey(), _on:true };
+  drawnPipes.push(def); makeDrawnPipe(def);
+  drawPts.length=0; updatePreview();
+  document.getElementById('drawName').value='';
+  renderDrawnList(); applyDrawnVis();
+  toast('Leitung erstellt: '+(def.name||(CATS[def.medium]||{label:'Leitung'}).label));
+}
+function applyDrawnVis(){
+  const key=currentModelKey();
+  drawnMeshes.forEach(m=>{ m.visible=(m.userData._model===key)&&(m.userData._def._on!==false); });
+  if(selected&&selected.userData&&selected.userData._drawn&&!selected.visible) deselect();
+}
+function renderDrawnList(){
+  const box=document.getElementById('fltDrawn'); if(!box) return; box.innerHTML='';
+  const key=currentModelKey();
+  const list=drawnMeshes.filter(m=>m.userData._model===key);
+  if(!list.length){ box.innerHTML='<div class="empty">Noch keine Leitung. Klicke „✏ Leitung", um zu zeichnen.</div>'; return; }
+  list.forEach(m=>{
+    const d=m.userData, def=d._def;
+    const row=document.createElement('label'); row.className='flt';
+    row.innerHTML='<input type="checkbox" '+(def._on!==false?'checked':'')+'><span class="swatch" style="background:'+hex((CATS[d.kategorie]||{color:0xcccccc}).color)+'"></span><span class="name" title="'+d.name+'">'+d.name+'</span><span class="count">'+(def.height||0)+' m</span><button class="dp-del" title="Löschen">×</button>';
+    row.querySelector('input').addEventListener('change',ev=>{ def._on=ev.target.checked; applyDrawnVis(); });
+    row.querySelector('.name').addEventListener('click',ev=>{ ev.preventDefault(); if(m.visible)select(m); });
+    row.querySelector('.dp-del').addEventListener('click',ev=>{ ev.preventDefault(); ev.stopPropagation(); deleteDrawn(m); });
+    box.appendChild(row);
+  });
+}
+function deleteDrawn(m){
+  let i=drawnMeshes.indexOf(m); if(i>=0)drawnMeshes.splice(i,1);
+  let j=drawnPipes.indexOf(m.userData._def); if(j>=0)drawnPipes.splice(j,1);
+  drawnGroup.remove(m); if(m.geometry)m.geometry.dispose(); if(m.material)m.material.dispose();
+  if(selected===m)deselect();
+  renderDrawnList();
+}
+function saveDrawn(){
+  const key=currentModelKey();
+  const pipes=drawnPipes.filter(d=>d.model===key);
+  if(!pipes.length){ toast('Für dieses Modell sind keine Leitungen gezeichnet.',true); return; }
+  const data={ format:'digitaler-zwilling-leitungen', model:key, pipes:pipes };
+  const b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b);
+  a.download='leitungen_'+(mode==='demo'?'beispiel':'upload')+'.json'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+async function loadDrawn(file){
+  try{
+    const data=JSON.parse(await file.text());
+    const arr=Array.isArray(data)?data:(data.pipes||[]);
+    const key=currentModelKey(); let n=0;
+    arr.forEach(d=>{ const pts=d.pts||[]; if(pts.length<2)return;
+      const def={ id:++drawIdc, medium:d.medium||'wasser', height:d.height||0, name:d.name||'', pts:pts, model:key, _on:true };
+      drawnPipes.push(def); makeDrawnPipe(def); n++; });
+    renderDrawnList(); applyDrawnVis();
+    toast(n?('Leitungen geladen: '+n):'Keine gültigen Leitungen in der Datei.',!n);
+  }catch(err){ toast('Datei nicht lesbar: '+err.message,true); }
+}
+document.getElementById('btnDraw').onclick=()=>toggleDraw(!drawMode);
+document.getElementById('drawUndo').onclick=()=>{ drawPts.pop(); updatePreview(); document.getElementById('drawHint').textContent=drawPts.length+' Punkt(e)'; };
+document.getElementById('drawCancel').onclick=()=>toggleDraw(false);
+document.getElementById('drawDone').onclick=finishPipe;
+document.getElementById('drawMedium').onchange=()=>updatePreview();
+document.getElementById('drawHeight').onchange=()=>updatePreview();
+document.getElementById('drawnSave').onclick=saveDrawn;
+document.getElementById('drawnLoad').onclick=()=>document.getElementById('drawnFile').click();
+document.getElementById('drawnFile').onchange=e=>{ if(e.target.files[0])loadDrawn(e.target.files[0]); e.target.value=''; };
+addEventListener('keydown',e=>{ if(!drawMode)return; if(e.key==='Enter'){e.preventDefault();finishPipe();} else if(e.key==='Escape'){toggleDraw(false);} else if(e.key==='Backspace'){e.preventDefault();drawPts.pop();updatePreview();} });
 
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
