@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Digitaler Zwilling – Industriestandort</title>
+<title>ABB · Digitaler Zwilling – Werk Musterstadt</title>
 <script src="three.min.js"></script>
 <script src="dxf.js"></script>
 <script src="jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#0f1720;--panel:#161f2b;--panel2:#1d2836;--line:#2b3a4d;
-    --txt:#e6edf3;--muted:#93a4b8;--accent:#4aa3ff;
+    --txt:#e6edf3;--muted:#93a4b8;--accent:#ff000f;--accent2:#ff3b45;
     --bau:#3d7dd8;--energie:#e08a2b;--wartung:#33a06f;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -18,13 +18,14 @@
   #app{display:grid;grid-template-columns:288px 1fr;grid-template-rows:56px 1fr;height:100vh}
   #topbar{grid-column:1/3;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line)}
   .logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
-  .logo .dot{width:11px;height:11px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .logo .abb{font-weight:800;font-size:22px;letter-spacing:1px;color:var(--accent);font-family:Arial,Helvetica,sans-serif;line-height:1}
+  .logo .ttl{font-weight:600}
   .logo .sub{color:var(--muted);font-size:12px;font-weight:400}
   .spacer{flex:1}
   .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 12px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap}
   .btn:hover{border-color:var(--accent);background:#20303f}
-  .btn.primary{background:var(--accent);border-color:var(--accent);color:#04121f;font-weight:600}
-  .btn.primary:hover{background:#63b1ff}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
   #sidebar{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px 12px}
   .sec-title{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
   .sec-title:first-child{margin-top:0}
@@ -71,8 +72,12 @@
   .row2 .v{text-align:right;font-weight:500}
   .badge{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;font-weight:600;background:rgba(51,160,111,.18);color:#57c793}
   .docs{padding:2px 16px 14px}
-  .doc{display:flex;align-items:center;gap:8px;font-size:12px;padding:7px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;margin-top:7px}
-  .doc .tag{font-size:9.5px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px}
+  .doc{display:flex;align-items:center;gap:8px;font-size:12px;padding:7px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;margin-top:7px;cursor:pointer;transition:.12s}
+  .doc:hover{border-color:var(--accent);background:#20303f}
+  .doc .tag{font-size:9.5px;font-weight:700;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px;flex:0 0 auto}
+  .doc .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .doc .open{font-size:10.5px;color:var(--accent);flex:0 0 auto;opacity:.75}
+  .doc:hover .open{opacity:1}
   .overlay{position:fixed;inset:0;background:rgba(6,10,15,.72);display:none;align-items:center;justify-content:center;z-index:50;backdrop-filter:blur(3px)}
   .overlay.open{display:flex}
   .modal{width:min(640px,92vw);max-height:88vh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
@@ -127,10 +132,10 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div class="logo"><span class="dot"></span> Digitaler Zwilling <span class="sub">· Industriestandort</span></div>
+    <div class="logo"><span class="abb">ABB</span> <span class="ttl">Digitaler Zwilling</span> <span class="sub">· Werk Musterstadt</span></div>
     <div class="spacer"></div>
     <span id="fileName" style="font-size:12.5px;color:var(--muted)"></span>
-    <select id="modelSel" class="sel" title="Modell wählen"><option value="demo">🏭 Beispielmodell</option></select>
+    <select id="modelSel" class="sel" title="Modell wählen"><option value="demo">🏭 ABB Werk Musterstadt</option></select>
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
     <button class="btn" id="btnReport">📄 Auswertung</button>
     <button class="btn" id="btnExport">⤒ Exportieren</button>
@@ -183,7 +188,7 @@
     <div id="drop" class="hide">
       <div class="zone">
         <h1>Eigene DWG- oder DXF-Datei laden</h1>
-        <p>Ziehe eine Zeichnung hierher oder wähle eine Datei. Sie wird als drehbares 3D-Modell dargestellt und nach Layern gefiltert. Das <b>Beispiel</b> oben zeigt ein vollständiges Modell mit hinterlegten Fachdaten.</p>
+        <p>Ziehe eine Zeichnung hierher oder wähle eine Datei. Sie wird als drehbares 3D-Modell dargestellt und nach Layern gefiltert. Das <b>ABB-Beispielmodell (Werk Musterstadt)</b> oben zeigt ein vollständiges Modell mit hinterlegten Fachdaten und Dokumenten.</p>
         <div class="formats">Unterstützt: <b>.dxf</b> (direkt im Browser) · <b>.dwg</b> (Umwandlung über den Konverter-Dienst)</div>
         <div class="row">
           <button class="btn primary" id="btnOpen2">Datei auswählen</button>
@@ -405,7 +410,7 @@ function switchTo(t){
   if(typeof clearMeasures==='function') clearMeasures();
   if(t==='demo'){ if(!demoGroup)return; mode='demo'; demoGroup.visible=true; if(dxfGroup)dxfGroup.visible=false;
     setUIMode('demo'); buildFilters(); applyDemoVis(); deselect();
-    document.getElementById('fileName').textContent='Beispiel: Industriestandort';
+    document.getElementById('fileName').textContent='ABB Werk Musterstadt · Standortmodell (Beispiel)';
     document.getElementById('stats').innerHTML='<b>'+elements.length+'</b> Bauteile · <b>2</b> Gebäude';
     fitCamera(60);
   } else { if(!dxfGroup)return; mode='dxf'; if(demoGroup)demoGroup.visible=false; dxfGroup.visible=true;
@@ -747,7 +752,7 @@ function pickAt(e){
 }
 let moved=false;
 canvas.addEventListener('click',e=>{ if(moved)return; if(measureMode){addMeasurePoint(e);return;} if(drawMode){addDrawPoint(e);return;} const o=pickAt(e); o?select(o):deselect(); });
-function hl(mesh,on){ if(!mesh.material.emissive)return; if(on){mesh.material.emissive.setHex(0x2b6bd6);mesh.material.emissiveIntensity=0.9;} else {mesh.material.emissive.copy(mesh.userData._e||new THREE.Color(0));mesh.material.emissiveIntensity=1;} }
+function hl(mesh,on){ if(!mesh.material.emissive)return; if(on){mesh.material.emissive.setHex(0xff2a30);mesh.material.emissiveIntensity=0.9;} else {mesh.material.emissive.copy(mesh.userData._e||new THREE.Color(0));mesh.material.emissiveIntensity=1;} }
 function select(mesh){
   if(selected) hl(selected,false);
   selected=mesh; hl(mesh,true);
@@ -764,7 +769,7 @@ function select(mesh){
       h+='</div></div>';
     });
     if(d.dokumente&&d.dokumente.length){ h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Verknüpfte Dokumente</div><div class="docs">';
-      d.dokumente.forEach(x=>h+='<div class="doc"><span class="tag">'+x.typ+'</span>'+x.name+'</div>'); h+='</div></div>'; }
+      d.dokumente.forEach((x,i)=>h+='<div class="doc" data-di="'+i+'" title="Dokument öffnen"><span class="tag">'+x.typ+'</span><span class="dn">'+x.name+'</span><span class="open">↗ öffnen</span></div>'); h+='</div></div>'; }
   } else {
     // DXF-Layer-Info
     const ents=parsed?parsed.entities.filter(x=>x.layer===d.layer):[];
@@ -775,6 +780,7 @@ function select(mesh){
     h+='</div></div><div class="note" style="margin:8px 16px 14px">Hinweis: Hochgeladene DXF-Dateien enthalten keine Fachdaten – Auswahl-Einheit ist der Layer. Fachdaten sind im <b>Beispiel</b> hinterlegt.</div>';
   }
   document.getElementById('iBody').innerHTML=h;
+  document.querySelectorAll('#iBody .doc[data-di]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-di'); const dd=selected&&selected.userData.dokumente?selected.userData.dokumente[i]:null; if(dd)openDocument(dd,selected.userData); }); });
   document.getElementById('info').classList.add('open');
 }
 function deselect(){ if(selected) hl(selected,false); selected=null; document.getElementById('info').classList.remove('open'); }
@@ -1153,7 +1159,7 @@ function populateModelMenu(){
   const s=document.getElementById('modelSel'); if(!s)return;
   s.innerHTML='';
   const add=(v,t)=>{ const o=document.createElement('option'); o.value=v; o.textContent=t; s.appendChild(o); };
-  add('demo','🏭 Beispielmodell');
+  add('demo','🏭 ABB Werk Musterstadt');
   serverModels.forEach(m=>add('srv:'+m.id,'📍 '+(m.name||'Standortmodell')));
   if(hasUpload && !currentServerId) add('uploaded','📄 '+uploadName+' (ungespeichert)');
   let want='demo';
@@ -1355,6 +1361,71 @@ document.getElementById('btnReport').onclick=()=>{ renderReport(document.getElem
 document.getElementById('repScope').onchange=e=>renderReport(e.target.value);
 document.getElementById('repPdf').onclick=()=>reportToPdf(document.getElementById('repScope').value);
 document.getElementById('repPrint').onclick=()=>reportPrint(document.getElementById('repScope').value);
+
+// ============================================================
+//  Verknüpfte Dokumente öffnen (gebrandete Beispiel-PDF)
+// ============================================================
+function slug(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'').slice(0,40); }
+function openDocument(docObj, ud){
+  const ns=window.jspdf;
+  if(!ns||!ns.jsPDF){ openDocumentHtml(docObj,ud); return; }
+  const doc=new ns.jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=44; let y=0;
+  const head=()=>{ doc.setFillColor(255,0,15); doc.rect(0,0,W,58,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(24); doc.text('ABB',M,38);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('Digitaler Zwilling · Werk Musterstadt',M+66,36);
+    doc.setFontSize(8); doc.text('Beispieldokument (Demo)',W-M,34,{align:'right'}); };
+  const foot=()=>{ doc.setDrawColor(220); doc.line(M,H-40,W-M,H-40); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(130,130,130);
+    doc.text('Automatisch generiert vom Digitalen Zwilling · ABB Werk Musterstadt (Demonstration) · Stand '+new Date().toLocaleDateString('de-DE'),M,H-26);
+    doc.text('Seite '+doc.internal.getNumberOfPages(),W-M,H-26,{align:'right'}); };
+  const ensure=h=>{ if(y+h>H-52){ foot(); doc.addPage(); head(); y=80; } };
+  head(); y=80;
+  doc.setTextColor(20,20,20); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  const tl=doc.splitTextToSize(docObj.name,W-2*M); doc.text(tl,M,y); y+=tl.length*18+2;
+  doc.setDrawColor(255,0,15); doc.setLineWidth(2); doc.line(M,y,W-M,y); doc.setLineWidth(1); y+=20;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  [['Bauteil',ud.name||'-'],['Kategorie',ud.katLabel||'-'],['Gebäude/Bereich',ud.gebLabel||'-'],['Dokumenttyp',docObj.typ||'-'],['Dokument-ID',(ud.id||'DOC')+'-'+slug(docObj.name)]].forEach(r=>{
+    doc.setTextColor(120,120,120); doc.text(r[0]+':',M,y); doc.setTextColor(40,40,40); doc.text(String(r[1]),M+120,y); y+=14; });
+  y+=8;
+  const section=(title,obj)=>{ if(!obj||!Object.keys(obj).length)return; ensure(42);
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,30,30); doc.text(title,M,y); y+=6; doc.setDrawColor(230); doc.line(M,y,W-M,y); y+=13;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    Object.entries(obj).forEach(([k,v])=>{ const L=doc.splitTextToSize(String(v),W-M-(M+150)); ensure(Math.max(13,L.length*12));
+      doc.setTextColor(115,115,115); doc.text(String(k),M,y); doc.setTextColor(30,30,30); doc.text(L,M+150,y); y+=Math.max(13,L.length*12); }); y+=10; };
+  const isDwg=(docObj.typ||'').toUpperCase()==='DWG';
+  ensure(50);
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(30,30,30); doc.text('Beschreibung',M,y); y+=6; doc.setDrawColor(230); doc.line(M,y,W-M,y); y+=13;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(55,55,55);
+  const desc=isDwg
+    ? 'Deckblatt/Auszug zur CAD-Zeichnung „'+docObj.name+'". Die vollständige Zeichnung wird aus dem CAD-/Dokumentenmanagement verknüpft. Unten das Schriftfeld mit den Kenndaten des Bauteils.'
+    : 'Dieses Dokument fasst die technischen Kenndaten sowie den Prüf- und Wartungsstand des Bauteils „'+(ud.name||'')+'" zusammen. Es ist im Digitalen Zwilling mit dem 3D-Objekt verknüpft und lässt sich direkt aus dem Modell öffnen.';
+  const dl=doc.splitTextToSize(desc,W-2*M); ensure(dl.length*13); doc.text(dl,M,y); y+=dl.length*13+12;
+  section('Statik / Tragwerk', ud.statik);
+  section('Versorgung / Technik', ud.energie);
+  const bal={}; (ud.verbrauch||[]).forEach(x=>bal['Verbrauch '+((MEDIA_BAL[x.medium]||{}).label||x.medium)]=fmtNum(x.wert)+' '+(x.einheit||''));
+  (ud.einspeisung||[]).forEach(x=>bal['Einspeisung '+((MEDIA_BAL[x.medium]||{}).label||x.medium)]=fmtNum(x.wert)+' '+(x.einheit||'')+(x.quelle?' ('+x.quelle+')':''));
+  section('Anschlusswerte / Bilanz', bal);
+  section('Wartung / Instandhaltung', ud.wartung);
+  if(isDwg){ ensure(110); const bx=M, bw=W-2*M, bh=90; doc.setDrawColor(70); doc.rect(bx,y,bw,bh);
+    doc.line(bx,y+bh-26,bx+bw,y+bh-26); doc.line(bx+bw*0.6,y,bx+bw*0.6,y+bh);
+    doc.setFontSize(9); doc.setTextColor(60,60,60);
+    doc.text('Zeichnung: '+docObj.name,bx+8,y+18); doc.text('Bauteil: '+(ud.name||'-'),bx+8,y+34); doc.text('Bereich: '+(ud.gebLabel||'-'),bx+8,y+50);
+    doc.text('Maßstab: 1:100 (Schema)',bx+bw*0.6+8,y+18); doc.text('Format: A3',bx+bw*0.6+8,y+34); doc.text('Rev.: A',bx+bw*0.6+8,y+50);
+    doc.setFont('helvetica','bold'); doc.text('ABB Werk Musterstadt',bx+8,y+bh-9); doc.setFont('helvetica','normal'); doc.text('Digitaler Zwilling (Demo)',bx+bw*0.6+8,y+bh-9); y+=bh+10; }
+  foot();
+  const w=window.open(doc.output('bloburl'),'_blank');
+  if(!w) toast('Bitte Pop-ups erlauben, um das Dokument zu öffnen.',true);
+}
+function openDocumentHtml(docObj,ud){
+  const kv=o=>o?Object.entries(o).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join(''):'';
+  let secs='';
+  if(ud.statik)secs+='<h2>Statik / Tragwerk</h2><table>'+kv(ud.statik)+'</table>';
+  if(ud.energie)secs+='<h2>Versorgung / Technik</h2><table>'+kv(ud.energie)+'</table>';
+  if(ud.wartung)secs+='<h2>Wartung / Instandhaltung</h2><table>'+kv(ud.wartung)+'</table>';
+  const w=window.open('','_blank'); if(!w){ toast('Bitte Pop-ups erlauben, um das Dokument zu öffnen.',true); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(docObj.name)+'</title><style>body{font-family:Arial,Helvetica,sans-serif;margin:0;color:#111}.hd{background:#ff000f;color:#fff;padding:14px 28px}.hd b{font-size:22px;font-weight:800;letter-spacing:1px}.wrap{padding:20px 28px}h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;border-bottom:2px solid #ff000f;padding-bottom:3px;margin:18px 0 8px}table{border-collapse:collapse;width:100%;font-size:12px}td{border-bottom:1px solid #eee;padding:4px 8px;vertical-align:top}td:first-child{color:#666;width:220px}.ft{color:#888;font-size:11px;margin-top:22px;border-top:1px solid #ddd;padding-top:8px}</style></head><body><div class="hd"><b>ABB</b> &nbsp; Digitaler Zwilling · Werk Musterstadt</div><div class="wrap"><h1>'+esc(docObj.name)+'</h1><div style="color:#666;font-size:12px">Bauteil: '+esc(ud.name||'-')+' · '+esc(ud.katLabel||'')+' · '+esc(ud.gebLabel||'')+' · Typ: '+esc(docObj.typ||'')+'</div>'+secs+'<div class="ft">Beispieldokument – automatisch generiert vom Digitalen Zwilling (Demonstration).</div></div></body></html>');
+  w.document.close();
+}
 
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
