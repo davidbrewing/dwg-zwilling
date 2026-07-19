@@ -155,6 +155,7 @@
           <option value="realistisch">Realistisch</option>
           <option value="roentgen">Röntgen (transparent)</option>
         </select></div>
+      <button class="btn btnAllVis" id="btnAllVisDemo" style="width:100%;margin-top:8px">🚫 Alle ausblenden</button>
       <div class="sec-title">Bauwerk</div>
       <div id="fltBau"></div>
       <div class="sec-title">Medien / Versorgung</div>
@@ -182,6 +183,7 @@
       <div class="ctrl"><label for="extrude">Höhe (Extrusion)</label><input type="range" id="extrude" min="0" max="24" value="6" step="0.5"></div>
       <div class="ctrl"><label for="showLines">Linien (Grundriss)</label><input type="checkbox" id="showLines" checked></div>
       <div class="sec-title">Layer</div>
+      <button class="btn btnAllVis" id="btnAllVisDxf" style="width:100%;margin-bottom:7px">🚫 Alle ausblenden</button>
       <div id="layers"><div class="empty">–</div></div>
     </div>
     <!-- Gezeichnete Leitungen (beide Modelle) -->
@@ -446,6 +448,7 @@ function switchTo(t){
   }
   document.getElementById('drawnPanel').style.display='';
   renderDrawnList(); applyDrawnVis();
+  if(typeof updateAllBtnLabel==='function') updateAllBtnLabel();
   refreshModelSel();
 }
 
@@ -916,7 +919,7 @@ function buildFilters(){
     if(catOn[key]===undefined) catOn[key]=true;
     const row=document.createElement('label'); row.className='flt';
     row.innerHTML='<input type="checkbox" '+(catOn[key]?'checked':'')+'><span class="swatch" style="background:'+hex(c.color)+'"></span><span class="name">'+c.label+'</span><span class="count">'+catCount[key]+'</span>';
-    row.querySelector('input').addEventListener('change',e=>{catOn[key]=e.target.checked;applyDemoVis();});
+    row.querySelector('input').addEventListener('change',e=>{catOn[key]=e.target.checked;applyDemoVis();if(typeof updateAllBtnLabel==='function')updateAllBtnLabel();});
     (c.grp==='bau'?bau:(c.grp==='aussen'?(aus||med):med)).appendChild(row);
   });
   Object.entries(BLD).forEach(([key,b])=>{
@@ -1070,7 +1073,7 @@ function renderLayers(){const box=document.getElementById('layers');box.innerHTM
   Object.keys(parsed.layers).sort().forEach(name=>{ if(layerOn[name]===undefined)layerOn[name]=true; const med=MEDIA_RE.test(name);
     const row=document.createElement('label');row.className='flt';
     row.innerHTML='<input type="checkbox" '+(layerOn[name]?'checked':'')+'><span class="swatch" style="background:'+parsed.layers[name].color+'"></span><span class="name" title="'+name+'">'+name+(med?' 〜':'')+'</span><span class="count">'+(cnt[name]||0)+'</span>';
-    row.querySelector('input').addEventListener('change',e=>{layerOn[name]=e.target.checked;applyLayerVis();if(selected&&!selected.visible)deselect();});
+    row.querySelector('input').addEventListener('change',e=>{layerOn[name]=e.target.checked;applyLayerVis();if(selected&&!selected.visible)deselect();if(typeof updateAllBtnLabel==='function')updateAllBtnLabel();});
     box.appendChild(row);});}
 function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const med=MEDIA_RE.test(o.userData.layer);o.visible=(o.userData.kind==='line')?(vis&&(showLines||med)):vis;});}
 function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
@@ -1681,6 +1684,31 @@ function renderHiddenList(){
 }
 (function(){ const f=document.getElementById('flowToggle'); if(f)f.addEventListener('change',e=>{ flowOn=e.target.checked; });
   const r=document.getElementById('renderStyle'); if(r)r.addEventListener('change',e=>{ renderStyle=e.target.value; applyRenderStyle(); }); })();
+
+// ============================================================
+//  Schnellbutton: alle Layer/Kategorien aus-/einblenden
+// ============================================================
+function toggleAllVis(){
+  if(mode==='demo'){
+    const keys=Object.keys(CATS).filter(k=>elements.some(m=>m.userData.kategorie===k));
+    const anyOn=keys.some(k=>catOn[k]!==false);
+    keys.forEach(k=>catOn[k]=!anyOn);
+    buildFilters(); applyDemoVis();
+  } else if(mode==='dxf'&&parsed){
+    const keys=Object.keys(parsed.layers);
+    const anyOn=keys.some(n=>layerOn[n]!==false);
+    keys.forEach(n=>layerOn[n]=!anyOn);
+    renderLayers(); applyLayerVis(); if(selected&&!selected.visible)deselect();
+  }
+  updateAllBtnLabel();
+}
+function updateAllBtnLabel(){
+  let on=true;
+  if(mode==='demo'){ const keys=Object.keys(CATS).filter(k=>elements.some(m=>m.userData.kategorie===k)); on=keys.length?keys.some(k=>catOn[k]!==false):true; }
+  else if(mode==='dxf'&&parsed){ const keys=Object.keys(parsed.layers); on=keys.length?keys.some(n=>layerOn[n]!==false):true; }
+  document.querySelectorAll('.btnAllVis').forEach(b=>b.textContent=on?'🚫 Alle ausblenden':'👁 Alle einblenden');
+}
+document.querySelectorAll('.btnAllVis').forEach(b=>b.onclick=toggleAllVis);
 
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
