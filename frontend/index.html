@@ -6,6 +6,7 @@
 <title>Digitaler Zwilling – Industriestandort</title>
 <script src="three.min.js"></script>
 <script src="dxf.js"></script>
+<script src="jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg:#0f1720;--panel:#161f2b;--panel2:#1d2836;--line:#2b3a4d;
@@ -100,6 +101,23 @@
   .toolpanel .dp-hint{font-size:11.5px;color:var(--muted)}
   .dp-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;line-height:1;padding:0 3px;flex:0 0 auto}
   .dp-del:hover{color:#e0674f}
+  .bal-card{border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-bottom:10px;background:var(--panel2)}
+  .bal-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .bal-head .sw{width:12px;height:12px;border-radius:3px;flex:0 0 auto}
+  .bal-head b{font-size:13.5px}
+  .bal-head .tag{font-size:11px;color:var(--muted)}
+  .bal-nums{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0 6px;font-size:12.5px}
+  .bal-nums div{display:flex;flex-direction:column}
+  .bal-nums .lbl{color:var(--muted);font-size:11px}
+  .bal-nums .val{font-weight:600;font-size:14px}
+  .bal-bar{height:8px;border-radius:5px;background:#0b1017;overflow:hidden;border:1px solid var(--line)}
+  .bal-bar span{display:block;height:100%}
+  .bal-cons{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.55}
+  .rep-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+  .rep-tbl th,.rep-tbl td{text-align:left;padding:5px 7px;border-bottom:1px solid var(--line);vertical-align:top}
+  .rep-tbl th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .rep-h2{font-size:14px;margin:16px 0 8px;font-weight:600}
+  .rep-warn{color:#e0a44f}
   #measureLabels{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden}
   #measureLabels .mlabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,23,32,.92);border:1px solid var(--accent);color:var(--txt);font-size:12px;font-weight:600;padding:2px 8px;border-radius:11px;white-space:nowrap}
   ::-webkit-scrollbar{width:9px;height:9px}
@@ -114,6 +132,7 @@
     <span id="fileName" style="font-size:12.5px;color:var(--muted)"></span>
     <select id="modelSel" class="sel" title="Modell wählen"><option value="demo">🏭 Beispielmodell</option></select>
     <button class="btn" id="btnOpen">⤓ Datei öffnen</button>
+    <button class="btn" id="btnReport">📄 Auswertung</button>
     <button class="btn" id="btnExport">⤒ Exportieren</button>
     <button class="btn" id="btnDraw">✏ Leitung</button>
     <button class="btn" id="btnMeasure">📏 Messen</button>
@@ -272,6 +291,27 @@
   </div>
 </div>
 
+<!-- Auswertungs-/Bericht-Modal -->
+<div class="overlay" id="reportOverlay">
+  <div class="modal" style="width:min(820px,94vw)">
+    <button class="close-x" data-close>×</button>
+    <h3>Auswertung &amp; Bilanzierung</h3>
+    <p class="lead">Bilanz der Versorgungsmedien (Einspeisung vs. Verbrauch) und Statik-Auswertung – online ansehen und als PDF speichern.</p>
+    <div class="modal-row">
+      <label style="font-size:13px;color:var(--muted)">Umfang:</label>
+      <select id="repScope">
+        <option value="ALL">Gesamter Standort</option>
+        <option value="A">Nur Gebäude A · Produktionshalle</option>
+        <option value="B">Nur Gebäude B · Bürogebäude</option>
+        <option value="V">Nur Verbindung / Außenanlagen</option>
+      </select>
+      <button class="btn primary" id="repPdf">⤓ Als PDF speichern</button>
+      <button class="btn" id="repPrint">🖨 Drucken</button>
+    </div>
+    <div id="reportBody"></div>
+  </div>
+</div>
+
 <!-- Import-Modal -->
 <div class="overlay" id="importOverlay">
   <div class="modal">
@@ -292,6 +332,8 @@ const CATS = {
   tragwerk:{label:'Tragwerk',        color:0x8aa0b8, grp:'bau',   extr:true},
   huelle:  {label:'Gebäudehülle',    color:0x7f8ea3, grp:'bau',   extr:true},
   anlagen: {label:'Anlagen / Geräte',color:0x8b6fd6, grp:'bau',   extr:true},
+  sanitaer:{label:'Sanitär',         color:0x6fb1d6, grp:'bau',   extr:true},
+  versorger:{label:'Öffentl. Versorgung',color:0xb0bcc9,grp:'bau',extr:true},
   heizung: {label:'Heizung',         color:0xd8492f, grp:'medien', pipe:true},
   waerme:  {label:'Fernwärme',       color:0xe8873a, grp:'medien', pipe:true},
   kaelte:  {label:'Kälte',           color:0x5bc8ff, grp:'medien', pipe:true},
@@ -386,6 +428,7 @@ function addEl(mesh,o){
     id:'EL-'+String(++idc).padStart(3,'0'),
     name:o.name, kategorie:o.cat, katLabel:CATS[o.cat].label, gebaeude:o.g, gebLabel:BLD[o.g].label,
     statik:o.statik||null, energie:o.energie||null, wartung:o.wartung||null, dokumente:o.dokumente||[],
+    verbrauch:o.verbrauch||null, einspeisung:o.einspeisung||null,
     _e: mesh.material.emissive?mesh.material.emissive.clone():new THREE.Color(0)
   };
   demoGroup.add(mesh); elements.push(mesh);
@@ -441,20 +484,57 @@ function buildDemo(){
   // Maschinen A
   addEl(place(box(6,3,3,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Ax-7,1.5,Az+4),{cat:'anlagen',g:'A',name:'Produktionsanlage 1',
     energie:{'Elektr. Anschluss':'75 kW',Druckluft:'8 bar / 240 l/min',Kühlwasser:'6 m³/h',Abwärme:'ca. 22 kW'},
+    verbrauch:[{medium:'elektro',wert:75,einheit:'kW'},{medium:'druckluft',wert:240,einheit:'l/min'},{medium:'wasser',wert:6,einheit:'m³/h'}],
     wartung:{'Letzte Wartung':'2026-01-18',Intervall:'quartalsweise',Zuständig:'Instandhaltung',Zustand:'gut'},
     dokumente:[{name:'Anlage1_Wartungsplan.pdf',typ:'PDF'}]});
   addEl(place(box(4,2.4,3,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Ax+8,1.2,Az-4),{cat:'anlagen',g:'A',name:'Produktionsanlage 2',
     energie:{'Elektr. Anschluss':'45 kW',Druckluft:'8 bar / 120 l/min',Abwärme:'ca. 12 kW'},
+    verbrauch:[{medium:'elektro',wert:45,einheit:'kW'},{medium:'druckluft',wert:120,einheit:'l/min'}],
     wartung:{'Letzte Wartung':'2025-12-03',Intervall:'quartalsweise',Zuständig:'Instandhaltung'},
     dokumente:[{name:'Anlage2_Handbuch.pdf',typ:'PDF'}]});
+  // Schweißroboterzelle (neu)
+  addEl(place(box(3,2.2,3,mat(0x717f8e,{rough:0.4,metal:0.55})),Ax-6,1.1,Az-6),{cat:'anlagen',g:'A',name:'Schweißroboterzelle',
+    energie:{'Elektr. Anschluss':'30 kW',Druckluft:'6 bar / 60 l/min',Absaugung:'1.200 m³/h',Schutzgas:'Ar/CO₂'},
+    verbrauch:[{medium:'elektro',wert:30,einheit:'kW'},{medium:'druckluft',wert:60,einheit:'l/min'},{medium:'lueftung',wert:1200,einheit:'m³/h'}],
+    wartung:{'Letzte Wartung':'2026-02-02',Intervall:'quartalsweise',Zuständig:'Instandhaltung'},dokumente:[{name:'Schweisszelle_Wartung.pdf',typ:'PDF'}]});
+  // CNC-Fräsmaschine (neu)
+  addEl(place(box(3.5,2,2.5,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Ax+2,1,Az+6),{cat:'anlagen',g:'A',name:'CNC-Fräsmaschine',
+    energie:{'Elektr. Anschluss':'40 kW',Druckluft:'6 bar / 90 l/min','Kühlschmierstoff':'3 m³/h','Abwärme':'ca. 14 kW'},
+    verbrauch:[{medium:'elektro',wert:40,einheit:'kW'},{medium:'druckluft',wert:90,einheit:'l/min'},{medium:'wasser',wert:3,einheit:'m³/h'}],
+    wartung:{'Letzte Wartung':'2025-11-28',Intervall:'quartalsweise',Zuständig:'Instandhaltung'},dokumente:[{name:'CNC_Handbuch.pdf',typ:'PDF'}]});
+  // Lackierkabine (neu)
+  addEl(place(box(5,3,4,mat(0x7a8593,{rough:0.5,metal:0.35,opacity:0.9})),Ax+10,1.5,Az+5),{cat:'anlagen',g:'A',name:'Lackier- & Trocknungskabine',
+    energie:{'Elektr. Anschluss':'15 kW','Zu-/Abluft':'5.000 m³/h','Trocknung (Wärme)':'20 kW',Filterstufen:'3'},
+    verbrauch:[{medium:'elektro',wert:15,einheit:'kW'},{medium:'lueftung',wert:5000,einheit:'m³/h'},{medium:'waerme',wert:20,einheit:'kW'}],
+    wartung:{'Letzter Filterwechsel':'2025-12-18',Intervall:'6 Monate',Zuständig:'Instandhaltung'},dokumente:[{name:'Lackierkabine_ATEX.pdf',typ:'PDF'}]});
+  // Lufterhitzer / Hallenheizung (neu, Wärmeverbraucher)
+  addEl(place(box(2,1.5,1,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax+11,4,Az-8),{cat:'anlagen',g:'A',name:'Lufterhitzer Hallenheizung',
+    energie:{Typ:'Warmwasser-Lufterhitzer',Heizleistung:'90 kW',Vorlauf:'70 °C',Luftmenge:'8.000 m³/h'},
+    verbrauch:[{medium:'waerme',wert:90,einheit:'kW'}],
+    wartung:{'Letzte Wartung':'2025-10-08',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Hallenheizung.pdf',typ:'PDF'}]});
+  // Prozess-Kältemaschine (neu, Kälte-Erzeuger)
+  addEl(place(box(2.6,2,2,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax-12,1,Az-7),{cat:'kaelte',g:'A',name:'Prozess-Kältemaschine',
+    energie:{Typ:'Kaltwassersatz',Kälteleistung:'80 kW',Kältemittel:'R513A','Elektr. Leistung':'20 kW',EER:'4,0'},
+    einspeisung:[{medium:'kaelte',wert:80,einheit:'kW',quelle:'Eigenerzeugung'}],
+    verbrauch:[{medium:'elektro',wert:20,einheit:'kW'}],
+    wartung:{'Letzte Wartung':'2026-01-30',Intervall:'jährlich (F-Gas)',Zuständig:'Energiemanagement'},dokumente:[{name:'Kaeltemaschine_Fgas.pdf',typ:'PDF'}]});
+  // Niederspannungs-Hauptverteilung A (Allgemeinstrom Halle)
+  addEl(place(box(1.2,2,0.6,mat(0x5f6b7a,{rough:0.5,metal:0.4})),Ax-13,1,Az-1),{cat:'elektro',g:'A',name:'NS-Hauptverteilung A',
+    energie:{'Bemessungsstrom':'630 A','Allgemeinverbraucher':'12 kW (Licht/Steckdosen)','Speisung':'aus Netzanschluss'},
+    verbrauch:[{medium:'elektro',wert:12,einheit:'kW'}],
+    wartung:{'DGUV V3 Prüfung':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'NSHV_A_Schema.pdf',typ:'PDF'}]});
   // Kompressorstation (Druckluft-Erzeuger)
   addEl(place(box(2.4,2,1.8,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax-12,1,Az+7),{cat:'druckluft',g:'A',name:'Kompressorstation',
-    energie:{Typ:'Schraubenkompressor',Liefermenge:'420 l/min',Betriebsdruck:'8 bar','Elektr. Leistung':'11 kW','Abwärme-Nutzung':'ja (Heizung)'},
+    energie:{Typ:'Schraubenkompressor',Liefermenge:'660 l/min',Betriebsdruck:'8 bar','Elektr. Leistung':'11 kW','Abwärme-Nutzung':'ja (Heizung)'},
+    einspeisung:[{medium:'druckluft',wert:660,einheit:'l/min',quelle:'Eigenerzeugung'}],
+    verbrauch:[{medium:'elektro',wert:11,einheit:'kW'}],
     wartung:{'Letzte Wartung':'2025-10-20',Intervall:'halbjährlich',Zuständig:'Energiemanagement',Nächste:'2026-04-20'},
     dokumente:[{name:'Kompressor_Datenblatt.pdf',typ:'PDF'},{name:'Druckluft_Wartung_2025.pdf',typ:'PDF'}]});
-  // RLT-Gerät auf Dach A
+  // RLT-Gerät auf Dach A (Lüftungs-Erzeuger)
   addEl(place(box(4,1.6,2.4,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Ax+6,Ah+1.9,Az),{cat:'lueftung',g:'A',name:'RLT-Zentralgerät A',
     energie:{Typ:'RLT mit WRG',Luftleistung:'9.500 m³/h','Elektr. Anschluss':'11 kW',Wärmerückgewinnung:'82 %',Filter:'ISO ePM1 60%'},
+    einspeisung:[{medium:'lueftung',wert:9500,einheit:'m³/h',quelle:'Eigenerzeugung'}],
+    verbrauch:[{medium:'elektro',wert:11,einheit:'kW'}],
     wartung:{'Letzter Filterwechsel':'2025-12-05',Intervall:'6 Monate',Zuständig:'Energiemanagement',Nächste:'2026-06-05'},
     dokumente:[{name:'RLT_A_Protokoll.pdf',typ:'PDF'}]});
   // Medien A (Rohre unter Dach, y≈7)
@@ -497,11 +577,48 @@ function buildDemo(){
   // Anlagen B: Wärmeübergabestation + Klimagerät (Kälte)
   addEl(place(box(1.6,1.8,1,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx-5,0.9,Bz+4),{cat:'waerme',g:'B',name:'Wärmeübergabestation B',
     energie:{Typ:'Fernwärme-Übergabe',Anschlussleistung:'60 kW',Vorlauf:'70 °C',Rücklauf:'50 °C',Wärmemengenzähler:'ja'},
+    verbrauch:[{medium:'waerme',wert:60,einheit:'kW'}],
     wartung:{'Letzte Wartung':'2025-09-30',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Uebergabestation_B.pdf',typ:'PDF'}]});
   addEl(place(box(1.8,1,1.2,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx+4,Bh+1.4,Bz),{cat:'kaelte',g:'B',name:'Klimagerät B (Kälte)',
     energie:{Typ:'Splitklimaanlage / Kaltwasser',Kälteleistung:'24 kW',Kältemittel:'R32','Elektr. Leistung':'7 kW',SEER:'6,1'},
+    verbrauch:[{medium:'kaelte',wert:24,einheit:'kW'},{medium:'elektro',wert:7,einheit:'kW'}],
     wartung:{'Letzte Wartung':'2026-02-15',Intervall:'jährlich (F-Gas)',Zuständig:'Energiemanagement',Nächste:'2027-02-15'},
     dokumente:[{name:'Klimageraet_B_Fgas.pdf',typ:'PDF'}]});
+  // Serverraum-Klimaschrank (neu)
+  addEl(place(box(1,2,1,mat(0x6f7d8c,{rough:0.4,metal:0.5})),Bx+5,1,Bz+3),{cat:'anlagen',g:'B',name:'Serverraum + Klimaschrank',
+    energie:{'IT-Last':'9 kW','Kühlung (Kaltwasser)':'6 kW',Redundanz:'N+1',USV:'20 min'},
+    verbrauch:[{medium:'elektro',wert:9,einheit:'kW'},{medium:'kaelte',wert:6,einheit:'kW'}],
+    wartung:{'Letzte Wartung':'2026-03-05',Intervall:'halbjährlich',Zuständig:'IT / Instandhaltung'},dokumente:[{name:'Serverraum_Kuehlung.pdf',typ:'PDF'}]});
+  // NS-Unterverteilung B (Allgemeinstrom Büro)
+  addEl(place(box(0.8,1.8,0.4,mat(0x5f6b7a,{rough:0.5,metal:0.4})),Bx-5.5,0.9,Bz),{cat:'elektro',g:'B',name:'NS-Unterverteilung B',
+    energie:{'Bemessungsstrom':'160 A','Allgemeinverbraucher':'14 kW (Licht/Arbeitsplätze)','Speisung':'aus Netzanschluss'},
+    verbrauch:[{medium:'elektro',wert:14,einheit:'kW'}],
+    wartung:{'DGUV V3':'2025-05-10',Intervall:'4 Jahre (Büro)',Zuständig:'Elektrotechnik'},dokumente:[{name:'UV_B_Schema.pdf',typ:'PDF'}]});
+  // -------- Sanitärbereich B (WC-Kabinen, Toiletten, Waschbecken) --------
+  const Sx=Bx+3.5, Sz=Bz-3.5;   // Zentrum Sanitär im EG
+  // Trennwände der Kabinen (3 Kabinen -> 4 Trennwände)
+  [-1.5,-0.5,0.5,1.5].forEach((dx,i)=>addEl(place(box(0.06,2,1.4,mat(0xaeb9c6,{rough:0.6,opacity:0.55})),Sx+dx,1,Sz-0.3),{cat:'sanitaer',g:'B',name:'WC-Trennwand '+(i+1),
+    statik:{Material:'HPL-Trennwand',Höhe:'2,0 m'},wartung:{Intervall:'nach Bedarf',Zuständig:'Standortmanagement'}}));
+  // 3 Toiletten (WC)
+  [-1,0,1].forEach((dx,i)=>addEl(place(box(0.4,0.42,0.55,mat(0xf0f4f8,{rough:0.3})),Sx+dx,0.24,Sz-0.6),{cat:'sanitaer',g:'B',name:'WC '+(i+1)+' (Kabine '+(i+1)+')',
+    energie:{Medium:'Trinkwasser (Spülung)','Anschlusswert':'0,15 m³/h',Spülvolumen:'6 l',Abwasser:'DN 100'},
+    verbrauch:[{medium:'wasser',wert:0.15,einheit:'m³/h'}],
+    wartung:{'Letzte Prüfung':'2026-01-12',Intervall:'jährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Sanitaerplan_B.pdf',typ:'PDF'}]}));
+  // Urinal
+  addEl(place(box(0.35,0.5,0.3,mat(0xf0f4f8,{rough:0.3})),Sx+1.9,0.9,Sz-0.6),{cat:'sanitaer',g:'B',name:'Urinal',
+    energie:{Medium:'Trinkwasser','Anschlusswert':'0,05 m³/h',Spülung:'berührungslos'},
+    verbrauch:[{medium:'wasser',wert:0.05,einheit:'m³/h'}],
+    wartung:{Intervall:'jährlich',Zuständig:'Standortmanagement'}});
+  // 3 Waschbecken (Kalt- + Warmwasser)
+  [-1,0,1].forEach((dx,i)=>addEl(place(box(0.5,0.2,0.4,mat(0xf0f4f8,{rough:0.3})),Sx+dx,0.85,Sz+1.2),{cat:'sanitaer',g:'B',name:'Waschbecken '+(i+1),
+    energie:{Medium:'Trink-/Warmwasser','Kaltwasser':'0,2 m³/h','Warmwasser':'2 kW',Armatur:'Sensor'},
+    verbrauch:[{medium:'wasser',wert:0.2,einheit:'m³/h'},{medium:'waerme',wert:2,einheit:'kW'}],
+    wartung:{'Legionellenspülung':'automatisch',Intervall:'jährlich',Zuständig:'Standortmanagement'},dokumente:[{name:'Sanitaerplan_B.pdf',typ:'PDF'}]}));
+  // WC-Abluftventilator
+  addEl(place(box(0.5,0.4,0.5,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Sx,Bh-0.6,Sz),{cat:'lueftung',g:'B',name:'WC-Abluftventilator',
+    energie:{Medium:'Abluft',Volumenstrom:'300 m³/h',Schaltung:'Präsenz/Nachlauf'},
+    verbrauch:[{medium:'lueftung',wert:300,einheit:'m³/h'}],
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
   // Medien B
   pipe({cat:'heizung',g:'B',name:'Heizkreis B',r:0.08,pts:[[Bx-5,2.6,Bz+4],[Bx-5,2.6,Bz-4],[Bx+5,2.6,Bz-4]],
     energie:{Medium:'Heizwasser',Nennweite:'DN 40',Vorlauftemperatur:'55 °C',Heizkörper:'12 Stk',Regelung:'Einzelraum'},
@@ -517,6 +634,23 @@ function buildDemo(){
   pipe({cat:'lueftung',g:'B',name:'Lüftung Büro B',r:0.2,pts:[[Bx+4,5,Bz],[Bx-4,5,Bz]],
     energie:{Medium:'Zu-/Abluft',Volumenstrom:'1.800 m³/h',Wärmerückgewinnung:'85 %','CO2-Regelung':'ja'},
     wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'}});
+  // RLT Büro B (Lüftungs-Erzeuger) + Zuluftauslässe (Verbraucher)
+  addEl(place(box(2,1.2,1.6,mat(0x8b6fd6,{rough:0.5,metal:0.3})),Bx-4,Bh+1.3,Bz+3),{cat:'lueftung',g:'B',name:'RLT-Gerät Büro B',
+    energie:{Typ:'Kompaktgerät mit WRG',Luftleistung:'1.800 m³/h','Elektr. Anschluss':'3 kW',Wärmerückgewinnung:'85 %'},
+    einspeisung:[{medium:'lueftung',wert:1800,einheit:'m³/h',quelle:'Eigenerzeugung'}],
+    verbrauch:[{medium:'elektro',wert:3,einheit:'kW'}],
+    wartung:{'Filterwechsel':'2025-12',Intervall:'6 Monate',Zuständig:'Energiemanagement'},dokumente:[{name:'RLT_B_Protokoll.pdf',typ:'PDF'}]});
+  addEl(place(box(1.6,0.2,1,mat(0x9fb3c9,{rough:0.7,opacity:0.5})),Bx,4.6,Bz+2),{cat:'lueftung',g:'B',name:'Zuluftauslässe Büro B',
+    energie:{Medium:'Zuluft Büroräume',Volumenstrom:'1.600 m³/h',Auslässe:'Drallauslässe'},
+    verbrauch:[{medium:'lueftung',wert:1600,einheit:'m³/h'}],
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
+  // Sanitär-Anbindung: Trink- und Warmwasser zu den Waschbecken/WC
+  pipe({cat:'wasser',g:'B',name:'Trinkwasser Sanitär B',r:0.05,pts:[[Bx-5,2.4,Sz],[Sx,2.4,Sz],[Sx,1.1,Sz+1.2]],
+    energie:{Medium:'Trinkwasser kalt',Nennweite:'DN 25','Versorgt':'3 WC, Urinal, 3 Waschbecken','Summe Anschlusswert':'≈ 1,1 m³/h'},
+    wartung:{'Legionellenprüfung':'bestanden',Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Sanitaerplan_B.pdf',typ:'PDF'}]});
+  pipe({cat:'heizung',g:'B',name:'Warmwasser Sanitär B',r:0.04,pts:[[Bx-5,2.2,Sz+1.5],[Sx,2.2,Sz+1.5],[Sx,1.1,Sz+1.2]],
+    energie:{Medium:'Warmwasser',Nennweite:'DN 20',Temperatur:'55 °C','Zirkulation':'ja'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'}});
 
   // ---------- Verbindung / Außenanlagen (Medientrasse A ⇄ B) ----------
   // Trasse-Kanal (Element)
@@ -525,10 +659,28 @@ function buildDemo(){
     energie:{Belegung:'Fernwärme, Kälte, Druckluft, Elektro, Wasser'},
     wartung:{'Letzte Begehung':'2025-08-19',Intervall:'2 Jahre',Zuständig:'Standortmanagement'},
     dokumente:[{name:'Medientrasse_Schnitt.dwg',typ:'DWG'},{name:'Trasse_Belegung.pdf',typ:'PDF'}]});
+  // ---------- Öffentlicher Versorgungsanschluss (Einspeisung ins Grundstück) ----------
+  const Ux=1, Uz=-13;   // Übergabestation an der Grundstücksgrenze / Straße
+  addEl(place(box(3,2.6,2.5,mat(0x9aa7b5,{rough:0.7,metal:0.2})),Ux,1.3,Uz),{cat:'versorger',g:'V',name:'Öffentlicher Versorgungsanschluss',
+    energie:{'Strom (Netzanschluss)':'400 kW / 630 A','Wasser (Hausanschluss)':'25 m³/h · 4 bar','Fernwärme (Übergabe)':'220 kW','Zählpunkte':'Strom, Wasser, Wärme'},
+    statik:{Bauart:'Übergabestation / Hausanschlussraum',Betongüte:'C25/30'},
+    einspeisung:[{medium:'elektro',wert:400,einheit:'kW',quelle:'öffentliches Netz'},{medium:'wasser',wert:25,einheit:'m³/h',quelle:'öffentliches Netz'},{medium:'waerme',wert:220,einheit:'kW',quelle:'Fernwärmenetz'}],
+    wartung:{'Zählerablesung':'monatlich','Letzte Prüfung':'2026-02-01',Intervall:'jährlich',Zuständig:'Energiemanagement'},
+    dokumente:[{name:'Hausanschluss_Uebergabe.pdf',typ:'PDF'},{name:'Zaehlerkonzept.pdf',typ:'PDF'}]});
+  // Einspeiseleitungen vom öffentlichen Anschluss ins Grundstück
+  pipe({cat:'elektro',g:'V',name:'Netzanschluss NS (öffentlich → Standort)',r:0.12,pts:[[Ux,0.6,Uz],[Ux,0.6,-1],[Ax-13,0.6,-1]],
+    energie:{Medium:'Strom Einspeisung','Anschlussleistung':'400 kW',Spannung:'400 V','Quelle':'öffentliches Netz'},
+    wartung:{'DGUV V3':'2025-04-22',Intervall:'jährlich',Zuständig:'Elektrotechnik'},dokumente:[{name:'Netzanschluss.pdf',typ:'PDF'}]});
+  pipe({cat:'wasser',g:'V',name:'Wasser-Hausanschluss (öffentlich → Standort)',r:0.1,pts:[[Ux,0.5,Uz],[Ux+2,0.5,-2],[8,0.5,-2]],
+    energie:{Medium:'Trinkwasser Einspeisung',Nennweite:'DN 80',Volumenstrom:'25 m³/h',Druck:'4 bar','Quelle':'öffentliches Netz','Wasserzähler':'Verbund'},
+    wartung:{Intervall:'jährlich',Zuständig:'Energiemanagement'},dokumente:[{name:'Wasser_Hausanschluss.pdf',typ:'PDF'}]});
+  pipe({cat:'waerme',g:'V',name:'Fernwärme-Hausanschluss (öffentlich → Standort)',r:0.14,pts:[[Ux,0.7,Uz],[Ux-1,0.7,-3],[-6,0.9,-0.6]],
+    energie:{Medium:'Fernwärme Einspeisung',Nennweite:'DN 125','Anschlussleistung':'220 kW',Vorlauf:'90 °C','Quelle':'Fernwärmenetz','Wärmemengenzähler':'Verbund'},
+    wartung:{Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Uebergabe.pdf',typ:'PDF'}]});
   // Leitungen quer über den Zwischenraum (A x=-6 ⇄ B x=8) auf y≈0.9
   const gy=0.9;
   pipe({cat:'waerme',g:'V',name:'Fernwärme Haupttrasse',r:0.16,pts:[[-6,gy,-0.6],[8,gy,-0.6]],
-    energie:{Medium:'Fernwärme',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'180 kW',Dämmung:'Kunststoffmantelrohr'},
+    energie:{Medium:'Fernwärme',Nennweite:'DN 125',Vorlauf:'90 °C',Rücklauf:'55 °C','Anschlussleistung':'220 kW',Dämmung:'Kunststoffmantelrohr'},
     wartung:{'Letzte Prüfung':'2025-07-04',Intervall:'2 Jahre',Zuständig:'Energiemanagement'},dokumente:[{name:'Fernwaerme_Trasse.pdf',typ:'PDF'}]});
   pipe({cat:'kaelte',g:'V',name:'Kälte-Verbindungsleitung',r:0.12,pts:[[-6,gy,0],[8,gy,0]],
     energie:{Medium:'Kaltwasser',Nennweite:'DN 80',Vorlauf:'6 °C',Rücklauf:'12 °C','Quelle':'zentrale Kältemaschine Halle A'},
@@ -1079,6 +1231,130 @@ async function deleteSiteModel(){
 document.getElementById('btnSaveSite').onclick=saveAsSiteModel;
 document.getElementById('btnSavePipes').onclick=saveSitePipes;
 document.getElementById('btnDeleteSite').onclick=deleteSiteModel;
+
+// ============================================================
+//  Bilanzierung der Versorgungsmedien + PDF-Auswertung
+// ============================================================
+const MEDIA_BAL={
+  elektro:{label:'Strom',einheit:'kW',color:0xe0b83a},
+  wasser:{label:'Wasser',einheit:'m³/h',color:0x3d8fe0},
+  waerme:{label:'Wärme / Fernwärme',einheit:'kW',color:0xe8873a},
+  kaelte:{label:'Kälte',einheit:'kW',color:0x5bc8ff},
+  druckluft:{label:'Druckluft',einheit:'l/min',color:0x27d3e6},
+  lueftung:{label:'Lüftung',einheit:'m³/h',color:0x2fb6a8},
+};
+const MEDIA_ORDER=['elektro','wasser','waerme','kaelte','druckluft','lueftung'];
+function fmtNum(n){ return (Math.round(n*10)/10).toLocaleString('de-DE'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function pick(o,keys){ if(!o)return''; const ks=Object.keys(o); for(const key of keys){ for(const kk of ks){ if(kk.toLowerCase().indexOf(key)>=0) return o[kk]; } } return ''; }
+function computeBalance(scope){
+  const res={};
+  const ensure=m=>{ if(!res[m])res[m]={medium:m,ein:0,ver:0,quellen:[],verbraucher:[]}; return res[m]; };
+  elements.forEach(el=>{ const d=el.userData; if(scope&&scope!=='ALL'&&d.gebaeude!==scope)return;
+    (d.einspeisung||[]).forEach(e=>{ const r=ensure(e.medium); r.ein+=Number(e.wert)||0; r.quellen.push({name:d.name,wert:Number(e.wert)||0,quelle:e.quelle||''}); });
+    (d.verbrauch||[]).forEach(v=>{ const r=ensure(v.medium); r.ver+=Number(v.wert)||0; r.verbraucher.push({name:d.name,wert:Number(v.wert)||0}); });
+  });
+  return res;
+}
+function scopeName(scope){ return scope==='ALL'?'Gesamter Standort':(BLD[scope]?BLD[scope].label:scope); }
+function renderReport(scope){
+  const bal=computeBalance(scope);
+  let h='<div style="font-size:12.5px;color:var(--muted);margin:2px 0 6px">'+esc(scopeName(scope))+' · Stand '+new Date().toLocaleDateString('de-DE')+'</div>';
+  h+='<div class="rep-h2">Bilanzierung der Versorgungsmedien</div>';
+  let any=false;
+  MEDIA_ORDER.forEach(m=>{ const r=bal[m]; if(!r||(r.ein===0&&r.ver===0))return; any=true;
+    const meta=MEDIA_BAL[m], reserve=r.ein-r.ver, aus=r.ein>0?Math.round(r.ver/r.ein*100):null;
+    const barw=r.ein>0?Math.min(100,Math.round(r.ver/r.ein*100)):100;
+    const barcol=reserve<0?'#d8492f':(aus>90?'#e0a44f':'#33a06f');
+    h+='<div class="bal-card"><div class="bal-head"><span class="sw" style="background:'+hex(meta.color)+'"></span><b>'+meta.label+'</b><span class="tag">Einheit: '+meta.einheit+'</span></div>';
+    h+='<div class="bal-nums"><div><span class="lbl">Einspeisung</span><span class="val">'+fmtNum(r.ein)+' '+meta.einheit+'</span></div>'+
+       '<div><span class="lbl">Verbrauch</span><span class="val">'+fmtNum(r.ver)+' '+meta.einheit+'</span></div>'+
+       '<div><span class="lbl">Reserve</span><span class="val" style="color:'+(reserve<0?'#e0674f':'#57c793')+'">'+fmtNum(reserve)+' '+meta.einheit+'</span></div>'+
+       (aus!=null?'<div><span class="lbl">Auslastung</span><span class="val">'+aus+' %</span></div>':'')+'</div>';
+    h+='<div class="bal-bar"><span style="width:'+barw+'%;background:'+barcol+'"></span></div>';
+    if(reserve<0) h+='<div class="bal-cons rep-warn">⚠ Verbrauch übersteigt die Einspeisung – Kapazität prüfen.</div>';
+    const q=r.quellen.map(x=>esc(x.name)+' ('+fmtNum(x.wert)+' '+meta.einheit+(x.quelle?', '+esc(x.quelle):'')+')').join(' · ');
+    const c=r.verbraucher.slice().sort((a,b)=>b.wert-a.wert).map(x=>esc(x.name)+' ('+fmtNum(x.wert)+' '+meta.einheit+')').join(' · ');
+    if(q)h+='<div class="bal-cons"><b>Einspeisung:</b> '+q+'</div>';
+    if(c)h+='<div class="bal-cons"><b>Verbraucher:</b> '+c+'</div>';
+    h+='</div>';
+  });
+  if(!any) h+='<div class="empty">Für diesen Umfang sind keine Bilanzdaten (Verbrauch/Einspeisung) hinterlegt. Diese sind im Beispielmodell vollständig gepflegt.</div>';
+  const st=elements.filter(el=>{const d=el.userData;return d.statik&&(scope==='ALL'||d.gebaeude===scope);});
+  h+='<div class="rep-h2">Statik-Auswertung ('+st.length+' Bauteile)</div>';
+  if(st.length){
+    h+='<table class="rep-tbl"><thead><tr><th>Bauteil</th><th>Geb.</th><th>Material</th><th>Güte / Profil</th><th>Tragfähigkeit</th><th>Status</th></tr></thead><tbody>';
+    st.forEach(el=>{const d=el.userData,s=d.statik;
+      h+='<tr><td>'+esc(d.name)+'</td><td>'+esc(d.gebaeude||'')+'</td><td>'+esc(pick(s,['material'])||'–')+'</td><td>'+esc(pick(s,['güte','beton','profil','querschnitt'])||'–')+'</td><td>'+esc(pick(s,['normalkraft','tragf','moment','bodenpressung','nutzlast','spannweite'])||'–')+'</td><td>'+esc(pick(s,['prüf','status'])||'–')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+  } else h+='<div class="empty">Keine Statik-Daten in diesem Umfang.</div>';
+  document.getElementById('reportBody').innerHTML=h;
+}
+function reportToPdf(scope){
+  const ns=window.jspdf; if(!ns||!ns.jsPDF){ reportPrint(scope); return; }
+  const doc=new ns.jsPDF({unit:'pt',format:'a4'});
+  const M=40,W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(); let y=50;
+  const need=h=>{ if(y+h>H-40){doc.addPage();y=50;return true;} return false; };
+  const C=(r,g,b)=>doc.setTextColor(r,g,b);
+  doc.setFont('helvetica','bold');doc.setFontSize(16);C(20,20,20);doc.text('Auswertung – Digitaler Zwilling',M,y);y+=18;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);C(90,90,90);doc.text(scopeName(scope)+'  ·  Stand '+new Date().toLocaleDateString('de-DE'),M,y);y+=13;
+  doc.setDrawColor(200);doc.line(M,y,W-M,y);y+=18;
+  doc.setFont('helvetica','bold');doc.setFontSize(13);C(30,30,30);doc.text('Bilanzierung der Versorgungsmedien',M,y);y+=17;
+  const bal=computeBalance(scope);
+  MEDIA_ORDER.forEach(m=>{const r=bal[m];if(!r||(r.ein===0&&r.ver===0))return;const meta=MEDIA_BAL[m],reserve=r.ein-r.ver,aus=r.ein>0?Math.round(r.ver/r.ein*100):0;
+    need(56);
+    doc.setFont('helvetica','bold');doc.setFontSize(11);C(30,30,30);doc.text(meta.label+' ('+meta.einheit+')',M,y);y+=13;
+    doc.setFont('helvetica','normal');doc.setFontSize(9.5);C(60,60,60);
+    doc.text('Einspeisung '+fmtNum(r.ein)+'   ·   Verbrauch '+fmtNum(r.ver)+'   ·   Reserve '+fmtNum(reserve)+'   ·   Auslastung '+aus+' %',M,y);y+=10;
+    const bw=W-2*M, fill=r.ein>0?Math.max(0,Math.min(1,r.ver/r.ein)):1, col=reserve<0?[216,73,47]:(aus>90?[224,164,79]:[51,160,111]);
+    doc.setFillColor(235,235,235);doc.rect(M,y,bw,6,'F');doc.setFillColor(col[0],col[1],col[2]);doc.rect(M,y,bw*fill,6,'F');y+=13;
+    const src=r.quellen.map(x=>x.name+' '+fmtNum(x.wert)+(x.quelle?' ('+x.quelle+')':'')).join(', ');
+    const cons=r.verbraucher.slice().sort((a,b)=>b.wert-a.wert).map(x=>x.name+' '+fmtNum(x.wert)).join(', ');
+    doc.setFontSize(9);C(110,110,110);
+    if(src){const L=doc.splitTextToSize('Einspeisung: '+src,W-2*M);need(L.length*10);doc.text(L,M,y);y+=L.length*10+1;}
+    if(cons){const L=doc.splitTextToSize('Verbraucher: '+cons,W-2*M);need(L.length*10);doc.text(L,M,y);y+=L.length*10+1;}
+    y+=9;
+  });
+  need(26);y+=2;doc.setFont('helvetica','bold');doc.setFontSize(13);C(30,30,30);
+  const st=elements.filter(el=>{const d=el.userData;return d.statik&&(scope==='ALL'||d.gebaeude===scope);});
+  doc.text('Statik-Auswertung ('+st.length+' Bauteile)',M,y);y+=15;
+  const cols=[[M,'Bauteil',150],[M+150,'Geb.',32],[M+182,'Material',108],[M+290,'Güte/Profil',95],[M+385,'Tragfähigkeit',92],[M+477,'Status',W-M-(M+477)]];
+  const header=()=>{doc.setFont('helvetica','bold');doc.setFontSize(8);C(90,90,90);cols.forEach(c=>doc.text(String(c[1]),c[0],y));y+=3;doc.setDrawColor(200);doc.line(M,y,W-M,y);y+=9;};
+  header();
+  st.forEach(el=>{const d=el.userData,s=d.statik;
+    const vals=[d.name,d.gebaeude||'',pick(s,['material'])||'-',pick(s,['güte','beton','profil','querschnitt'])||'-',pick(s,['normalkraft','tragf','moment','bodenpressung','nutzlast','spannweite'])||'-',pick(s,['prüf','status'])||'-'];
+    doc.setFont('helvetica','normal');doc.setFontSize(8);
+    const wrapped=cols.map((c,i)=>doc.splitTextToSize(String(vals[i]),c[2]-4));
+    const rowH=Math.max.apply(null,wrapped.map(w=>w.length))*9+3;
+    if(need(rowH+2)) header();
+    C(40,40,40);cols.forEach((c,i)=>doc.text(wrapped[i],c[0],y));
+    y+=rowH; doc.setDrawColor(235);doc.line(M,y-3,W-M,y-3);
+  });
+  doc.save('Auswertung_'+scope+'.pdf');
+}
+function reportPrint(scope){
+  const bal=computeBalance(scope);
+  let body='<h1>Auswertung – Digitaler Zwilling</h1><div class="sub">'+esc(scopeName(scope))+' · Stand '+new Date().toLocaleDateString('de-DE')+'</div>';
+  body+='<h2>Bilanzierung der Versorgungsmedien</h2>';
+  MEDIA_ORDER.forEach(m=>{const r=bal[m];if(!r||(r.ein===0&&r.ver===0))return;const meta=MEDIA_BAL[m],reserve=r.ein-r.ver,aus=r.ein>0?Math.round(r.ver/r.ein*100):0;
+    body+='<div class="card"><b>'+esc(meta.label)+'</b> ('+esc(meta.einheit)+') — Einspeisung '+fmtNum(r.ein)+' · Verbrauch '+fmtNum(r.ver)+' · Reserve '+fmtNum(reserve)+' · Auslastung '+aus+' %'+
+      '<div class="small">Verbraucher: '+esc(r.verbraucher.slice().sort((a,b)=>b.wert-a.wert).map(x=>x.name+' '+fmtNum(x.wert)).join(', '))+'</div></div>';
+  });
+  const st=elements.filter(el=>{const d=el.userData;return d.statik&&(scope==='ALL'||d.gebaeude===scope);});
+  body+='<h2>Statik-Auswertung ('+st.length+' Bauteile)</h2><table><tr><th>Bauteil</th><th>Geb.</th><th>Material</th><th>Güte/Profil</th><th>Tragfähigkeit</th><th>Status</th></tr>';
+  st.forEach(el=>{const d=el.userData,s=d.statik;body+='<tr><td>'+esc(d.name)+'</td><td>'+esc(d.gebaeude||'')+'</td><td>'+esc(pick(s,['material'])||'-')+'</td><td>'+esc(pick(s,['güte','beton','profil','querschnitt'])||'-')+'</td><td>'+esc(pick(s,['normalkraft','tragf','moment','bodenpressung','nutzlast','spannweite'])||'-')+'</td><td>'+esc(pick(s,['prüf','status'])||'-')+'</td></tr>';});
+  body+='</table>';
+  const w=window.open('','_blank');
+  if(!w){toast('Bitte Pop-ups erlauben, um die Druckansicht zu öffnen.',true);return;}
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Auswertung</title><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:28px}h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:14px}h2{font-size:14px;border-bottom:1px solid #ccc;padding-bottom:4px;margin:18px 0 8px}.card{border:1px solid #ddd;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px}.small{color:#666;font-size:11px;margin-top:4px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border-bottom:1px solid #ddd;text-align:left;padding:4px 6px;vertical-align:top}th{color:#555}</style></head><body>'+body+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);};</scr'+'ipt></body></html>');
+  w.document.close();
+}
+const reportOverlay=document.getElementById('reportOverlay');
+document.getElementById('btnReport').onclick=()=>{ renderReport(document.getElementById('repScope').value); reportOverlay.classList.add('open'); };
+document.getElementById('repScope').onchange=e=>renderReport(e.target.value);
+document.getElementById('repPdf').onclick=()=>reportToPdf(document.getElementById('repScope').value);
+document.getElementById('repPrint').onclick=()=>reportPrint(document.getElementById('repScope').value);
 
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
