@@ -576,7 +576,7 @@ canvas.addEventListener('pointermove',e=>{ if(!dragging){canvas.style.cursor=pic
   const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
   if(panning){const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);}
   else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));} applyCam(); });
-canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(8,Math.min(400,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
+canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(1.2,Math.min(600,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
 document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.theta;phi=HOME.phi;target.set(HOME.tx,HOME.ty,HOME.tz);applyCam();};
 
 // ============================================================
@@ -611,7 +611,15 @@ function renderLayers(){const box=document.getElementById('layers');box.innerHTM
     box.appendChild(row);});}
 function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const med=MEDIA_RE.test(o.userData.layer);o.visible=(o.userData.kind==='line')?(vis&&(showLines||med)):vis;});}
 function loadDXFText(text,name){ let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
-  clearScene(); parsed=m; const b=m.bounds; const size=Math.max(b.maxX-b.minX,b.maxY-b.minY)||1; transform={cx:(b.minX+b.maxX)/2,cy:(b.minY+b.maxY)/2,s:60/size};
+  clearScene(); parsed=m;
+  // Robuste Skalierung: Ausreißer-Geometrie (Streupunkte, Titelblöcke, Rahmen) ignorieren
+  const _pts=[]; m.entities.forEach(e=>{ if(e.type==='LINE'){_pts.push([e.x1,e.y1],[e.x2,e.y2]);} else if(e.type==='POLYLINE'){e.verts.forEach(v=>_pts.push([v.x,v.y]));} else if(e.type==='CIRCLE'){_pts.push([e.cx-e.r,e.cy],[e.cx+e.r,e.cy],[e.cx,e.cy-e.r],[e.cx,e.cy+e.r]);} else if(e.type==='ARC'){_pts.push([e.cx,e.cy]);} else if(e.type==='3DFACE'){e.pts.forEach(p=>_pts.push([p.x,p.y]));} });
+  const _xs=_pts.map(p=>p[0]).sort((a,b)=>a-b), _ys=_pts.map(p=>p[1]).sort((a,b)=>a-b);
+  const _q=(a,p)=>a.length?a[Math.min(a.length-1,Math.max(0,Math.round(p*(a.length-1))))]:0;
+  let _minX=_q(_xs,0.02),_maxX=_q(_xs,0.98),_minY=_q(_ys,0.02),_maxY=_q(_ys,0.98);
+  if(!(_maxX>_minX)||!(_maxY>_minY)){ _minX=m.bounds.minX;_maxX=m.bounds.maxX;_minY=m.bounds.minY;_maxY=m.bounds.maxY; }
+  const size=Math.max(_maxX-_minX,_maxY-_minY)||1;
+  transform={cx:(_minX+_maxX)/2,cy:(_minY+_maxY)/2,s:60/size};
   Object.keys(layerOn).forEach(k=>delete layerOn[k]); setUIMode('dxf'); buildDXF(); renderLayers(); fitCamera(60);
   document.getElementById('drop').classList.add('hide'); document.getElementById('fileName').textContent=name||'';
   document.getElementById('stats').innerHTML='<b>'+m.stats.entities+'</b> Objekte · <b>'+m.stats.layers+'</b> Layer';
