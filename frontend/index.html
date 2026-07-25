@@ -123,6 +123,10 @@
   .rep-tbl th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
   .rep-h2{font-size:14px;margin:16px 0 8px;font-weight:600}
   .rep-warn{color:#e0a44f}
+  .fd-hint{font-size:11px;color:var(--muted);line-height:1.5;margin:2px 0 8px}
+  .fd-l{font-size:11px;color:var(--muted);margin:8px 0 3px;font-weight:600}
+  .fd-ta{width:100%;min-height:48px;background:#0b1017;color:#cfe3ff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;resize:vertical}
+  .fd-in{width:100%;background:#0b1017;color:#cfe3ff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12px}
   #measureLabels{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden}
   #measureLabels .mlabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,23,32,.92);border:1px solid var(--accent);color:var(--txt);font-size:12px;font-weight:600;padding:2px 8px;border-radius:11px;white-space:nowrap}
   ::-webkit-scrollbar{width:9px;height:9px}
@@ -175,9 +179,11 @@
       <div class="sec-title">Standortmodell (Server)</div>
       <div id="srvBox">
         <button class="btn primary" id="btnSaveSite" style="width:100%">＋ Als Standortmodell speichern</button>
-        <button class="btn" id="btnSavePipes" style="width:100%;display:none">🔄 Leitungen sichern</button>
+        <button class="btn" id="btnSavePipes" style="width:100%;display:none">🔄 Änderungen sichern</button>
+        <button class="btn" id="btnUpdateGeom" style="width:100%;display:none;margin-top:6px">🔁 Geometrie aktualisieren (DWG)</button>
         <button class="btn" id="btnDeleteSite" style="width:100%;display:none;margin-top:6px">🗑 Standortmodell löschen</button>
-        <div class="empty" id="srvHint" style="margin-top:6px">Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar.</div>
+        <input type="file" id="geomFile" accept=".dxf,.dwg">
+        <div class="empty" id="srvHint" style="margin-top:6px">Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar. Fachdaten je Layer bleiben beim Aktualisieren der Geometrie erhalten.</div>
       </div>
       <div class="sec-title">Extrusion &amp; Etagen</div>
       <div class="ctrl"><label for="dxfUnit">Zeichnungseinheit</label>
@@ -977,19 +983,46 @@ function select(mesh){
     if(d.dokumente&&d.dokumente.length){ h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Verknüpfte Dokumente</div><div class="docs">';
       d.dokumente.forEach((x,i)=>h+='<div class="doc" data-di="'+i+'" title="Dokument öffnen"><span class="tag">'+x.typ+'</span><span class="dn">'+x.name+'</span><span class="open">↗ öffnen</span></div>'); h+='</div></div>'; }
   } else {
-    // DXF-Layer-Info
+    // DXF-Layer: Geometrie-Info + editierbare Fachdaten (je Layer, dauerhaft)
     const ents=parsed?parsed.entities.filter(x=>x.layer===d.layer):[];
-    const types={}; ents.forEach(x=>types[x.type]=(types[x.type]||0)+1);
+    const c=layerCfg[d.layer]||{};
     h+='<div class="dept"><div class="dept-b" style="padding-top:12px">';
-    h+='<div class="row2"><span class="k">Objekte</span><span>'+ents.length+'</span></div>';
-    Object.entries(types).forEach(([t,n])=>h+='<div class="row2"><span class="k">· '+t+'</span><span>'+n+'</span></div>');
-    h+='</div></div><div class="note" style="margin:8px 16px 14px">Hinweis: Hochgeladene DXF-Dateien enthalten keine Fachdaten – Auswahl-Einheit ist der Layer. Fachdaten sind im <b>Beispiel</b> hinterlegt.</div>';
+    h+='<div class="row2"><span class="k">Layer</span><span class="v">'+esc(d.layer||'')+'</span></div>';
+    h+='<div class="row2"><span class="k">Etage · Bauteil</span><span class="v">'+esc((c.etage||'—')+' · '+(c.bauteil||'—'))+'</span></div>';
+    h+='<div class="row2"><span class="k">Objekte</span><span class="v">'+ents.length+'</span></div>';
+    h+='<div class="row2"><span class="k">Höhe / Basis</span><span class="v">'+(c.height!=null?(c.height+' m / '+(c.base||0)+' m'):'–')+'</span></div>';
+    h+='</div></div>';
+    const ld=ensureLayerData(d.layer);
+    h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Fachdaten (Layer · editierbar)</div><div class="dept-b">';
+    h+='<div class="fd-hint">Je Zeile „Schlüssel: Wert". Wird im Standortmodell gespeichert und bleibt beim Neuladen der Geometrie erhalten.</div>';
+    h+='<div class="fd-l">Statik / Tragwerk</div><textarea class="fd-ta" id="fdStatik" placeholder="Betongüte: C30/37&#10;Bewehrung: Q335">'+esc(kvToText(ld.statik))+'</textarea>';
+    h+='<div class="fd-l">Energie / Versorgung</div><textarea class="fd-ta" id="fdEnergie" placeholder="Medium: Fernwärme&#10;Volumenstrom: 42 m³/h">'+esc(kvToText(ld.energie))+'</textarea>';
+    h+='<div class="fd-l">Wartung</div><textarea class="fd-ta" id="fdWartung" placeholder="Letzte Wartung: 2026-01-10&#10;Intervall: jährlich">'+esc(kvToText(ld.wartung))+'</textarea>';
+    h+='<div class="fd-l">Notiz</div><input class="fd-in" id="fdNotiz" value="'+esc(ld.notiz||'')+'">';
+    h+='<div class="fd-l">Dokumente (ein Dateiname je Zeile)</div><textarea class="fd-ta" id="fdDocs" placeholder="Statik_Wand.pdf">'+esc(docsToText(ld.dokumente))+'</textarea>';
+    h+='</div></div>';
+    if(ld.dokumente&&ld.dokumente.length){ h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Dokumente öffnen</div><div class="docs">';
+      ld.dokumente.forEach((x,i)=>h+='<div class="doc" data-ldi="'+i+'" title="Dokument öffnen"><span class="tag">'+esc(x.typ)+'</span><span class="dn">'+esc(x.name)+'</span><span class="open">↗ öffnen</span></div>'); h+='</div></div>'; }
   }
   document.getElementById('iBody').innerHTML=h;
   document.querySelectorAll('#iBody .doc[data-di]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-di'); const dd=selected&&selected.userData.dokumente?selected.userData.dokumente[i]:null; if(dd)openDocument(dd,selected.userData); }); });
   const hb=document.getElementById('btnHideEl'); if(hb)hb.addEventListener('click',()=>{ if(selected)toggleHideElement(selected); });
+  // Fachdaten-Editor (DXF-Layer) verdrahten
+  if(mode==='dxf' && d.layer){
+    const ld=ensureLayerData(d.layer);
+    const bind=(id,fn)=>{ const el=document.getElementById(id); if(el)el.addEventListener('change',()=>{ fn(el.value); }); };
+    bind('fdStatik',v=>ld.statik=textToKV(v));
+    bind('fdEnergie',v=>ld.energie=textToKV(v));
+    bind('fdWartung',v=>ld.wartung=textToKV(v));
+    bind('fdNotiz',v=>ld.notiz=v);
+    bind('fdDocs',v=>{ ld.dokumente=textToDocs(v); if(selected)select(selected); });
+    document.querySelectorAll('#iBody .doc[data-ldi]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-ldi'); const dd=ld.dokumente[i]; if(dd)openDocument(dd,udForLayer(d.layer,ld)); }); });
+  }
   document.getElementById('info').classList.add('open');
 }
+function udForLayer(layer,ld){ const c=layerCfg[layer]||{}; return {name:layer,katLabel:'Layer',gebLabel:((c.etage||'')+' · '+(c.bauteil||'')),id:'LAY',
+  statik:(ld.statik&&Object.keys(ld.statik).length)?ld.statik:null, energie:(ld.energie&&Object.keys(ld.energie).length)?ld.energie:null,
+  wartung:(ld.wartung&&Object.keys(ld.wartung).length)?ld.wartung:null, dokumente:ld.dokumente||[]}; }
 function deselect(){ if(selected) hl(selected,false); selected=null; document.getElementById('info').classList.remove('open'); }
 document.getElementById('infoClose').onclick=deselect;
 
@@ -1056,6 +1089,13 @@ function setUIMode(m){ mode=m; document.getElementById('demoFilters').style.disp
 const MEDIA_RE=/HEIZ|WASSER|LUEFT|LÜFT|ELEKTRO|DRUCK|WAERME|WÄRME|KAELTE|KÄLTE|MEDIEN|LEITUNG|KABEL|ROHR/i;
 // ---- Layerstruktur: Etage · Bauteil aus dem Layernamen ableiten ----
 let dxfUnit='m', floorHeight=3.25; const layerCfg={};
+const layerData={};   // Fachdaten je Layer (überleben Geometrie-Neuladen)
+function kvToText(o){ return o?Object.entries(o).map(([k,v])=>k+': '+v).join('\n'):''; }
+function textToKV(t){ const o={}; String(t||'').split(/\n+/).forEach(line=>{ const i=line.indexOf(':'); if(i>0){ const k=line.slice(0,i).trim(), v=line.slice(i+1).trim(); if(k)o[k]=v; } }); return o; }
+function textToDocs(t){ return String(t||'').split(/\n+/).map(s=>s.trim()).filter(Boolean).map(name=>({name,typ:(name.split('.').pop()||'').toUpperCase()||'DOK'})); }
+function docsToText(a){ return (a||[]).map(d=>d.name).join('\n'); }
+function ensureLayerData(layer){ if(!layerData[layer])layerData[layer]={statik:{},energie:{},wartung:{},dokumente:[],notiz:''}; return layerData[layer]; }
+function layerHasData(ld){ return ld && ((ld.statik&&Object.keys(ld.statik).length)||(ld.energie&&Object.keys(ld.energie).length)||(ld.wartung&&Object.keys(ld.wartung).length)||(ld.dokumente&&ld.dokumente.length)||(ld.notiz&&ld.notiz.trim())); }
 const ETAGEN=[
   {re:/(^|[^A-Z0-9])(UG|KG|UNTERGESCHOSS)([^A-Z0-9]|$)/i,idx:-1,label:'UG'},
   {re:/(^|[^A-Z0-9])(EG|ERDGESCHOSS)([^A-Z0-9]|$)/i,idx:0,label:'EG'},
@@ -1156,7 +1196,7 @@ function renderLayers(){
 function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const c=layerCfg[o.userData.layer]||{};o.visible=(o.userData.kind==='line')?(vis&&(showLines|| !c.extrude)):vis;});}
 function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
   parsed=m; uploadName=name||'Hochgeladenes Modell'; hasUpload=true;
-  lastDXFText=text; currentServerId=opts.serverId||null;
+  lastDXFText=text; if(opts.serverId!==undefined) currentServerId=opts.serverId; else if(!opts.keepData) currentServerId=null;
   // Robuste Skalierung: Ausreißer-Geometrie (Streupunkte, Titelblöcke, Rahmen) ignorieren
   const _pts=[]; m.entities.forEach(e=>{ if(e.type==='LINE'){_pts.push([e.x1,e.y1],[e.x2,e.y2]);} else if(e.type==='POLYLINE'){e.verts.forEach(v=>_pts.push([v.x,v.y]));} else if(e.type==='CIRCLE'){_pts.push([e.cx-e.r,e.cy],[e.cx+e.r,e.cy],[e.cx,e.cy-e.r],[e.cx,e.cy+e.r]);} else if(e.type==='ARC'){_pts.push([e.cx,e.cy]);} else if(e.type==='3DFACE'){e.pts.forEach(p=>_pts.push([p.x,p.y]));} });
   const _xs=_pts.map(p=>p[0]).sort((a,b)=>a-b), _ys=_pts.map(p=>p[1]).sort((a,b)=>a-b);
@@ -1165,12 +1205,22 @@ function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text
   if(!(_maxX>_minX)||!(_maxY>_minY)){ _minX=m.bounds.minX;_maxX=m.bounds.maxX;_minY=m.bounds.minY;_maxY=m.bounds.maxY; }
   const size=Math.max(_maxX-_minX,_maxY-_minY)||1;
   transform={cx:(_minX+_maxX)/2,cy:(_minY+_maxY)/2,s:60/size};
-  // Zeichnungseinheit automatisch schätzen (mm/cm/m) und Layer-Konfiguration aus den Layernamen ableiten
-  dxfUnit = size>3000?'mm':(size>300?'cm':'m');
-  const _us=document.getElementById('dxfUnit'); if(_us)_us.value=dxfUnit;
   floorHeight=parseFloat((document.getElementById('floorH')||{}).value)||3.25;
-  Object.keys(layerCfg).forEach(k=>delete layerCfg[k]);
-  Object.keys(m.layers).forEach(n=>{ layerCfg[n]=defaultLayerCfg(n); });
+  if(!opts.keepData){
+    // Zeichnungseinheit automatisch schätzen (mm/cm/m)
+    dxfUnit = size>3000?'mm':(size>300?'cm':'m');
+    const _us=document.getElementById('dxfUnit'); if(_us)_us.value=dxfUnit;
+    // Layer-Konfiguration aus Layernamen ableiten, gespeicherte Werte übernehmen
+    Object.keys(layerCfg).forEach(k=>delete layerCfg[k]);
+    Object.keys(m.layers).forEach(n=>{ layerCfg[n]=defaultLayerCfg(n); });
+    if(opts.layerCfg) Object.keys(opts.layerCfg).forEach(n=>{ if(layerCfg[n])Object.assign(layerCfg[n],opts.layerCfg[n]); else layerCfg[n]=opts.layerCfg[n]; });
+    // Fachdaten setzen (frisch = leer; Server-Modell = gespeicherte)
+    Object.keys(layerData).forEach(k=>delete layerData[k]);
+    if(opts.layerData) Object.keys(opts.layerData).forEach(n=>{ layerData[n]=opts.layerData[n]; });
+  } else {
+    // Geometrie-Update: Fachdaten & Konfig behalten, nur neue Layer ergänzen
+    Object.keys(m.layers).forEach(n=>{ if(!layerCfg[n])layerCfg[n]=defaultLayerCfg(n); });
+  }
   Object.keys(layerOn).forEach(k=>delete layerOn[k]); buildDXF();
   document.getElementById('drop').classList.add('hide');
   switchTo('uploaded');
@@ -1459,13 +1509,14 @@ function populateModelMenu(){
 }
 function updateSrvBox(){
   const save=document.getElementById('btnSaveSite'); if(!save)return;
-  const pipesBtn=document.getElementById('btnSavePipes'), del=document.getElementById('btnDeleteSite'), hint=document.getElementById('srvHint');
+  const pipesBtn=document.getElementById('btnSavePipes'), geomBtn=document.getElementById('btnUpdateGeom'), del=document.getElementById('btnDeleteSite'), hint=document.getElementById('srvHint');
   const isServer=!!currentServerId, isDxf=(mode==='dxf');
   save.style.display=(isDxf&&!isServer)?'':'none';
   pipesBtn.style.display=(isDxf&&isServer)?'':'none';
+  if(geomBtn)geomBtn.style.display=(isDxf&&isServer)?'':'none';
   del.style.display=(isDxf&&isServer)?'':'none';
   hint.textContent=isServer
-    ? 'Liegt dauerhaft auf dem Server – über den Link für alle sichtbar. „Leitungen sichern" speichert Änderungen an den gezeichneten Leitungen.'
+    ? '„Änderungen sichern" speichert Leitungen + Fachdaten. „Geometrie aktualisieren" lädt eine neue DWG – die Fachdaten je Layer bleiben erhalten und werden wieder verknüpft.'
     : 'Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar.';
 }
 async function loadServerModel(id){
@@ -1474,8 +1525,34 @@ async function loadServerModel(id){
     const r=await fetch('api/models/'+encodeURIComponent(id));
     if(!r.ok)throw new Error('Server '+r.status);
     const data=await r.json();
-    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[]});
+    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}});
   }catch(err){ toast('Standortmodell konnte nicht geladen werden: '+err.message,true); }
+}
+// Neue Geometrie (DWG/DXF) in ein bestehendes Standortmodell laden – Fachdaten bleiben erhalten
+async function updateGeometryFromFile(file){
+  if(!currentServerId){ toast('Nur bei einem gespeicherten Standortmodell möglich.',true); return; }
+  const n=(file.name||'').toLowerCase(); let text;
+  try{
+    if(n.endsWith('.dxf')){ text=await file.text(); }
+    else if(n.endsWith('.dwg')){ toast('DWG wird umgewandelt …',false,true); const fd=new FormData(); fd.append('file',file);
+      const res=await fetch('api/convert',{method:'POST',body:fd}); if(!res.ok)throw new Error((await res.text().catch(()=>''))||('Server '+res.status)); text=await res.text(); }
+    else { toast('Bitte .dxf oder .dwg wählen.',true); return; }
+  }catch(err){ toast('Datei konnte nicht gelesen werden: '+err.message,true); return; }
+  // vor dem Laden: alte Layer merken, um zu bilanzieren
+  const oldLayers=parsed?Object.keys(parsed.layers):[];
+  const dataKeys=Object.keys(layerData).filter(k=>layerHasData(layerData[k]));
+  loadDXFText(text, uploadName, {keepData:true, serverId:currentServerId});
+  const newLayers=parsed?Object.keys(parsed.layers):[];
+  const wieder=dataKeys.filter(k=>newLayers.includes(k)).length;
+  const verwaist=dataKeys.filter(k=>!newLayers.includes(k)).length;
+  const neu=newLayers.filter(k=>!oldLayers.includes(k)).length;
+  // auf Server sichern (neue Geometrie + behaltene Fachdaten/Konfig)
+  try{
+    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg})});
+    if(!r.ok)throw new Error('Server '+r.status);
+  }catch(err){ toast('Geometrie geladen, aber Server-Sicherung fehlgeschlagen: '+err.message,true); return; }
+  toast('Geometrie aktualisiert · '+wieder+' Layer wiederverknüpft, '+neu+' neu'+(verwaist?', '+verwaist+' verwaist (Daten behalten)':''));
 }
 async function saveAsSiteModel(){
   if(mode!=='dxf'||!parsed||!lastDXFText){ toast('Bitte zuerst eine Datei hochladen.',true); return; }
@@ -1486,7 +1563,7 @@ async function saveAsSiteModel(){
   try{
     const oldKey=currentModelKey();
     const pipes=drawnPipes.filter(d=>d.model===oldKey);
-    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes})});
+    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg})});
     if(!r.ok)throw new Error((await r.text().catch(()=>''))||('Server '+r.status));
     const res=await r.json();
     const newKey='srv:'+res.id;
@@ -1500,12 +1577,12 @@ async function saveAsSiteModel(){
 }
 async function saveSitePipes(){
   if(!currentServerId){ toast('Erst als Standortmodell speichern.',true); return; }
-  toast('Leitungen werden gesichert …',false,true);
+  toast('Änderungen werden gesichert …',false,true);
   try{
     const pipes=drawnPipes.filter(d=>d.model==='srv:'+currentServerId);
-    const r=await fetch('api/models/'+currentServerId+'/pipes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes})});
+    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg})});
     if(!r.ok)throw new Error('Server '+r.status);
-    toast('Leitungen im Standortmodell gesichert ('+pipes.length+').');
+    toast('Änderungen gesichert (Leitungen + Fachdaten + Layer-Konfig).');
   }catch(err){ toast('Sichern fehlgeschlagen: '+err.message,true); }
 }
 async function deleteSiteModel(){
@@ -1527,6 +1604,8 @@ async function deleteSiteModel(){
 document.getElementById('btnSaveSite').onclick=saveAsSiteModel;
 document.getElementById('btnSavePipes').onclick=saveSitePipes;
 document.getElementById('btnDeleteSite').onclick=deleteSiteModel;
+document.getElementById('btnUpdateGeom').onclick=()=>document.getElementById('geomFile').click();
+document.getElementById('geomFile').onchange=e=>{ if(e.target.files[0])updateGeometryFromFile(e.target.files[0]); e.target.value=''; };
 
 // ============================================================
 //  Bilanzierung der Versorgungsmedien + PDF-Auswertung
