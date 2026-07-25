@@ -112,8 +112,10 @@ app.get('/api/models/:id', (req, res) => {
   try { dxf = fs.readFileSync(dxfP, 'utf8'); } catch (e) { return res.status(500).json({ error: 'Lesefehler.' }); }
   let pipes = [];
   try { pipes = JSON.parse(fs.readFileSync(pipesP, 'utf8')); } catch (e) { pipes = []; }
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
   const meta = readIndex().find(m => m.id === id) || {};
-  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes });
+  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes, layerData: data.layerData || {}, layerCfg: data.layerCfg || {} });
 });
 
 app.post('/api/models', (req, res) => {
@@ -122,9 +124,12 @@ app.post('/api/models', (req, res) => {
   if (!dxf || typeof dxf !== 'string') return res.status(400).json({ error: 'Kein DXF-Inhalt übergeben.' });
   const pipes = Array.isArray(body.pipes) ? body.pipes : [];
   const id = 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
+  const data = { layerData: (body.layerData && typeof body.layerData === 'object') ? body.layerData : {},
+                 layerCfg: (body.layerCfg && typeof body.layerCfg === 'object') ? body.layerCfg : {} };
   try {
     fs.writeFileSync(path.join(MODELS_DIR, id + '.dxf'), dxf);
     fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(pipes));
+    fs.writeFileSync(path.join(MODELS_DIR, id + '.data.json'), JSON.stringify(data));
   } catch (e) {
     console.error('Speichern fehlgeschlagen:', e.message);
     return res.status(500).json({ error: 'Speichern auf dem Server fehlgeschlagen.' });
@@ -149,11 +154,37 @@ app.put('/api/models/:id/pipes', (req, res) => {
   res.json({ ok: true, id, count: pipes.length });
 });
 
+// Generisches Update: aktualisiert nur die übergebenen Felder (Geometrie, Leitungen, Fachdaten, Layer-Konfig)
+app.put('/api/models/:id', (req, res) => {
+  const id = safeId(req.params.id);
+  const dxfP = path.join(MODELS_DIR, id + '.dxf');
+  if (!id || !fs.existsSync(dxfP)) return res.status(404).json({ error: 'Modell nicht gefunden.' });
+  const body = req.body || {};
+  try {
+    if (typeof body.dxf === 'string' && body.dxf.length) fs.writeFileSync(dxfP, body.dxf);
+    if (Array.isArray(body.pipes)) fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(body.pipes));
+    if (body.layerData !== undefined || body.layerCfg !== undefined) {
+      let data = {};
+      try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
+      if (body.layerData !== undefined) data.layerData = body.layerData;
+      if (body.layerCfg !== undefined) data.layerCfg = body.layerCfg;
+      fs.writeFileSync(path.join(MODELS_DIR, id + '.data.json'), JSON.stringify(data));
+    }
+    if (typeof body.name === 'string' && body.name.trim()) {
+      const idx = readIndex(); const e = idx.find(m => m.id === id); if (e) { e.name = body.name.slice(0, 120); writeIndex(idx); }
+    }
+  } catch (e) {
+    return res.status(500).json({ error: 'Aktualisieren fehlgeschlagen.' });
+  }
+  res.json({ ok: true, id });
+});
+
 app.delete('/api/models/:id', (req, res) => {
   const id = safeId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Ungültige ID.' });
   fs.unlink(path.join(MODELS_DIR, id + '.dxf'), () => {});
   fs.unlink(path.join(MODELS_DIR, id + '.pipes.json'), () => {});
+  fs.unlink(path.join(MODELS_DIR, id + '.data.json'), () => {});
   writeIndex(readIndex().filter(m => m.id !== id));
   res.json({ ok: true });
 });
