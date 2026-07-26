@@ -115,7 +115,7 @@ app.get('/api/models/:id', (req, res) => {
   let data = {};
   try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
   const meta = readIndex().find(m => m.id === id) || {};
-  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes, layerData: data.layerData || {}, layerCfg: data.layerCfg || {} });
+  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes, layerData: data.layerData || {}, layerCfg: data.layerCfg || {}, objectData: data.objectData || {} });
 });
 
 app.post('/api/models', (req, res) => {
@@ -125,7 +125,8 @@ app.post('/api/models', (req, res) => {
   const pipes = Array.isArray(body.pipes) ? body.pipes : [];
   const id = 'm' + Date.now().toString(36) + crypto.randomBytes(3).toString('hex');
   const data = { layerData: (body.layerData && typeof body.layerData === 'object') ? body.layerData : {},
-                 layerCfg: (body.layerCfg && typeof body.layerCfg === 'object') ? body.layerCfg : {} };
+                 layerCfg: (body.layerCfg && typeof body.layerCfg === 'object') ? body.layerCfg : {},
+                 objectData: (body.objectData && typeof body.objectData === 'object') ? body.objectData : {} };
   try {
     fs.writeFileSync(path.join(MODELS_DIR, id + '.dxf'), dxf);
     fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(pipes));
@@ -163,11 +164,12 @@ app.put('/api/models/:id', (req, res) => {
   try {
     if (typeof body.dxf === 'string' && body.dxf.length) fs.writeFileSync(dxfP, body.dxf);
     if (Array.isArray(body.pipes)) fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(body.pipes));
-    if (body.layerData !== undefined || body.layerCfg !== undefined) {
+    if (body.layerData !== undefined || body.layerCfg !== undefined || body.objectData !== undefined) {
       let data = {};
       try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
       if (body.layerData !== undefined) data.layerData = body.layerData;
       if (body.layerCfg !== undefined) data.layerCfg = body.layerCfg;
+      if (body.objectData !== undefined) data.objectData = body.objectData;
       fs.writeFileSync(path.join(MODELS_DIR, id + '.data.json'), JSON.stringify(data));
     }
     if (typeof body.name === 'string' && body.name.trim()) {
