@@ -152,6 +152,21 @@
           track(pts[q].x, pts[q].y);
         }
         entities.push({ type: '3DFACE', layer: layer, pts: pts });
+
+      } else if (r.type === 'TEXT') {
+        // Textbeschriftung – dient als Objekt-Kennung (Objekt-ID). Nicht in die Bounds einrechnen.
+        var tv = (first(r, 1) || '').trim();
+        if (tv) entities.push({ type: 'TEXT', layer: layer, x: num(r, 10, 0), y: num(r, 20, 0), z: num(r, 30, 0), text: tv });
+
+      } else if (r.type === 'MTEXT') {
+        // MTEXT: Text kann über Code 3 (Fortsetzung) + Code 1 verteilt sein
+        var mt = '';
+        for (var pm = 0; pm < r.props.length; pm++) {
+          if (r.props[pm].code === 3) mt += r.props[pm].value;
+          else if (r.props[pm].code === 1) mt += r.props[pm].value;
+        }
+        mt = mt.replace(/\\[A-Za-z][^;]*;/g, '').replace(/[{}]/g, '').replace(/\\P/g, ' ').trim();
+        if (mt) entities.push({ type: 'TEXT', layer: layer, x: num(r, 10, 0), y: num(r, 20, 0), z: num(r, 30, 0), text: mt });
       }
     }
 

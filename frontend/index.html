@@ -129,6 +129,8 @@
   .fd-in{width:100%;background:#0b1017;color:#cfe3ff;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12px}
   #measureLabels{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden}
   #measureLabels .mlabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,23,32,.92);border:1px solid var(--accent);color:var(--txt);font-size:12px;font-weight:600;padding:2px 8px;border-radius:11px;white-space:nowrap}
+  #idLabels{position:absolute;inset:0;pointer-events:none;z-index:6;overflow:hidden}
+  #idLabels .idlabel{position:absolute;transform:translate(-50%,-100%);background:rgba(30,20,4,.9);border:1px solid #ffb020;color:#ffd780;font-size:11px;font-weight:700;padding:1px 6px;border-radius:8px;white-space:nowrap}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:#2b3a4d;border-radius:6px}
 </style>
@@ -190,6 +192,7 @@
         <select id="dxfUnit" class="sel" style="padding:5px 8px"><option value="mm">Millimeter</option><option value="cm">Zentimeter</option><option value="m">Meter</option></select></div>
       <div class="ctrl"><label for="floorH">Geschosshöhe (m)</label><input type="number" id="floorH" value="3.25" step="0.25" min="1" style="width:70px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px"></div>
       <div class="ctrl"><label for="showLines">Grundriss-Linien</label><input type="checkbox" id="showLines" checked></div>
+      <div class="ctrl"><label for="showObjIds">Objekt-IDs anzeigen</label><input type="checkbox" id="showObjIds" checked></div>
       <div class="sec-title">Etage anzeigen</div>
       <div id="etageFilter"><div class="empty">–</div></div>
       <div class="sec-title">Layer (Höhe H · Basis in m)</div>
@@ -972,6 +975,7 @@ function select(mesh){
   document.getElementById('iSwatch').style.background = d.kategorie&&CATS[d.kategorie]?hex(CATS[d.kategorie].color):(d._col||'#c2ccd8');
   document.getElementById('iName').textContent=d.name||d.layer||'Bauteil';
   document.getElementById('iBld').textContent=d.gebLabel||'';
+  if(d.kind==='objid'){ const c=layerCfg[d.layer]||{}; document.getElementById('iCat').textContent='Objekt-ID · '+(d.layer||''); document.getElementById('iName').textContent=d.objId||'Objekt'; document.getElementById('iBld').textContent=((c.etage||'')+' · '+(c.bauteil||'')); }
   let h='';
   if(d.id && mode==='demo'){ h+='<div style="padding:10px 16px 2px"><button class="btn" id="btnHideEl" style="width:100%">'+(hidden.has(d.id)?'👁 Wieder einblenden':'🚫 Bauteil ausblenden')+'</button></div>'; }
   if(d.statik||d.energie||d.wartung){
@@ -983,18 +987,24 @@ function select(mesh){
     if(d.dokumente&&d.dokumente.length){ h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Verknüpfte Dokumente</div><div class="docs">';
       d.dokumente.forEach((x,i)=>h+='<div class="doc" data-di="'+i+'" title="Dokument öffnen"><span class="tag">'+x.typ+'</span><span class="dn">'+x.name+'</span><span class="open">↗ öffnen</span></div>'); h+='</div></div>'; }
   } else {
-    // DXF-Layer: Geometrie-Info + editierbare Fachdaten (je Layer, dauerhaft)
-    const ents=parsed?parsed.entities.filter(x=>x.layer===d.layer):[];
-    const c=layerCfg[d.layer]||{};
+    // DXF: Geometrie-Info + editierbare Fachdaten (Layer-Ebene oder Objekt-ID)
+    const isObj=(d.kind==='objid'); const c=layerCfg[d.layer]||{};
     h+='<div class="dept"><div class="dept-b" style="padding-top:12px">';
-    h+='<div class="row2"><span class="k">Layer</span><span class="v">'+esc(d.layer||'')+'</span></div>';
-    h+='<div class="row2"><span class="k">Etage · Bauteil</span><span class="v">'+esc((c.etage||'—')+' · '+(c.bauteil||'—'))+'</span></div>';
-    h+='<div class="row2"><span class="k">Objekte</span><span class="v">'+ents.length+'</span></div>';
-    h+='<div class="row2"><span class="k">Höhe / Basis</span><span class="v">'+(c.height!=null?(c.height+' m / '+(c.base||0)+' m'):'–')+'</span></div>';
+    if(isObj){
+      h+='<div class="row2"><span class="k">Objekt-ID</span><span class="v">'+esc(d.objId||'')+'</span></div>';
+      h+='<div class="row2"><span class="k">Layer</span><span class="v">'+esc(d.layer||'')+'</span></div>';
+      h+='<div class="row2"><span class="k">Etage · Bauteil</span><span class="v">'+esc((c.etage||'—')+' · '+(c.bauteil||'—'))+'</span></div>';
+    } else {
+      const ents=parsed?parsed.entities.filter(x=>x.layer===d.layer):[];
+      h+='<div class="row2"><span class="k">Layer</span><span class="v">'+esc(d.layer||'')+'</span></div>';
+      h+='<div class="row2"><span class="k">Etage · Bauteil</span><span class="v">'+esc((c.etage||'—')+' · '+(c.bauteil||'—'))+'</span></div>';
+      h+='<div class="row2"><span class="k">Objekte</span><span class="v">'+ents.length+'</span></div>';
+      h+='<div class="row2"><span class="k">Höhe / Basis</span><span class="v">'+(c.height!=null?(c.height+' m / '+(c.base||0)+' m'):'–')+'</span></div>';
+    }
     h+='</div></div>';
-    const ld=ensureLayerData(d.layer);
-    h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Fachdaten (Layer · editierbar)</div><div class="dept-b">';
-    h+='<div class="fd-hint">Je Zeile „Schlüssel: Wert". Wird im Standortmodell gespeichert und bleibt beim Neuladen der Geometrie erhalten.</div>';
+    const ld=isObj?ensureObjectData(d.objId):ensureLayerData(d.layer);
+    h+='<div class="dept"><div class="dept-h"><span class="bar" style="background:var(--accent)"></span>Fachdaten ('+(isObj?'Objekt-ID':'Layer')+' · editierbar)</div><div class="dept-b">';
+    h+='<div class="fd-hint">Je Zeile „Schlüssel: Wert". Wird im Standortmodell gespeichert und bleibt beim Neuladen der Geometrie '+(isObj?'über die ID ':'')+'erhalten.</div>';
     h+='<div class="fd-l">Statik / Tragwerk</div><textarea class="fd-ta" id="fdStatik" placeholder="Betongüte: C30/37&#10;Bewehrung: Q335">'+esc(kvToText(ld.statik))+'</textarea>';
     h+='<div class="fd-l">Energie / Versorgung</div><textarea class="fd-ta" id="fdEnergie" placeholder="Medium: Fernwärme&#10;Volumenstrom: 42 m³/h">'+esc(kvToText(ld.energie))+'</textarea>';
     h+='<div class="fd-l">Wartung</div><textarea class="fd-ta" id="fdWartung" placeholder="Letzte Wartung: 2026-01-10&#10;Intervall: jährlich">'+esc(kvToText(ld.wartung))+'</textarea>';
@@ -1007,19 +1017,23 @@ function select(mesh){
   document.getElementById('iBody').innerHTML=h;
   document.querySelectorAll('#iBody .doc[data-di]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-di'); const dd=selected&&selected.userData.dokumente?selected.userData.dokumente[i]:null; if(dd)openDocument(dd,selected.userData); }); });
   const hb=document.getElementById('btnHideEl'); if(hb)hb.addEventListener('click',()=>{ if(selected)toggleHideElement(selected); });
-  // Fachdaten-Editor (DXF-Layer) verdrahten
-  if(mode==='dxf' && d.layer){
-    const ld=ensureLayerData(d.layer);
+  // Fachdaten-Editor (DXF: Layer- oder Objekt-ID-Ebene) verdrahten
+  if(mode==='dxf' && (d.kind==='objid' || d.layer)){
+    const isObj=(d.kind==='objid'); const ld=isObj?ensureObjectData(d.objId):ensureLayerData(d.layer);
     const bind=(id,fn)=>{ const el=document.getElementById(id); if(el)el.addEventListener('change',()=>{ fn(el.value); }); };
     bind('fdStatik',v=>ld.statik=textToKV(v));
     bind('fdEnergie',v=>ld.energie=textToKV(v));
     bind('fdWartung',v=>ld.wartung=textToKV(v));
     bind('fdNotiz',v=>ld.notiz=v);
     bind('fdDocs',v=>{ ld.dokumente=textToDocs(v); if(selected)select(selected); });
-    document.querySelectorAll('#iBody .doc[data-ldi]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-ldi'); const dd=ld.dokumente[i]; if(dd)openDocument(dd,udForLayer(d.layer,ld)); }); });
+    const ud=isObj?udForObject(d.objId,ld,d.layer):udForLayer(d.layer,ld);
+    document.querySelectorAll('#iBody .doc[data-ldi]').forEach(el=>{ el.addEventListener('click',()=>{ const i=+el.getAttribute('data-ldi'); const dd=ld.dokumente[i]; if(dd)openDocument(dd,ud); }); });
   }
   document.getElementById('info').classList.add('open');
 }
+function udForObject(objId,ld,layer){ const c=layerCfg[layer]||{}; return {name:objId,katLabel:'Objekt-ID',gebLabel:((c.etage||'')+' · '+(c.bauteil||'')),id:objId,
+  statik:(ld.statik&&Object.keys(ld.statik).length)?ld.statik:null, energie:(ld.energie&&Object.keys(ld.energie).length)?ld.energie:null,
+  wartung:(ld.wartung&&Object.keys(ld.wartung).length)?ld.wartung:null, dokumente:ld.dokumente||[]}; }
 function udForLayer(layer,ld){ const c=layerCfg[layer]||{}; return {name:layer,katLabel:'Layer',gebLabel:((c.etage||'')+' · '+(c.bauteil||'')),id:'LAY',
   statik:(ld.statik&&Object.keys(ld.statik).length)?ld.statik:null, energie:(ld.energie&&Object.keys(ld.energie).length)?ld.energie:null,
   wartung:(ld.wartung&&Object.keys(ld.wartung).length)?ld.wartung:null, dokumente:ld.dokumente||[]}; }
@@ -1090,6 +1104,10 @@ const MEDIA_RE=/HEIZ|WASSER|LUEFT|LÜFT|ELEKTRO|DRUCK|WAERME|WÄRME|KAELTE|KÄLT
 // ---- Layerstruktur: Etage · Bauteil aus dem Layernamen ableiten ----
 let dxfUnit='m', floorHeight=3.25; const layerCfg={};
 const layerData={};   // Fachdaten je Layer (überleben Geometrie-Neuladen)
+const objectData={};  // Fachdaten je Objekt-ID (Text-Kennung im DWG)
+const dxfIdMarkers=[]; let showObjIds=true;
+function ensureObjectData(id){ if(!objectData[id])objectData[id]={statik:{},energie:{},wartung:{},dokumente:[],notiz:''}; return objectData[id]; }
+(function(){ const s=document.getElementById('stage'); if(s&&!document.getElementById('idLabels')){ const d=document.createElement('div'); d.id='idLabels'; s.appendChild(d); } })();
 function kvToText(o){ return o?Object.entries(o).map(([k,v])=>k+': '+v).join('\n'):''; }
 function textToKV(t){ const o={}; String(t||'').split(/\n+/).forEach(line=>{ const i=line.indexOf(':'); if(i>0){ const k=line.slice(0,i).trim(), v=line.slice(i+1).trim(); if(k)o[k]=v; } }); return o; }
 function textToDocs(t){ return String(t||'').split(/\n+/).map(s=>s.trim()).filter(Boolean).map(name=>({name,typ:(name.split('.').pop()||'').toUpperCase()||'DOK'})); }
@@ -1156,6 +1174,16 @@ function buildDXF(){
   Object.entries(per).forEach(([name,data])=>{ const color=new THREE.Color((parsed.layers[name]||{}).color||'#c2ccd8'); const vis=layerOn[name]!==false; const c=cfgOf(name);
     if(data.line.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.line,3));const lm=new THREE.LineSegments(g,new THREE.LineBasicMaterial({color}));lm.visible=vis&&(showLines|| !c.extrude);lm.userData={layer:name,kind:'line',_col:'#'+color.getHexString()};dxfGroup.add(lm);if(!c.extrude)dxfMeshes.push(lm);}
     if(data.wall.length){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(data.wall,3));g.computeVertexNormals();const m=new THREE.Mesh(g,mat(color,{rough:0.7,opacity:0.6}));m.visible=vis;m.userData={layer:name,kind:'wall',_col:'#'+color.getHexString()};dxfGroup.add(m);dxfMeshes.push(m);}});
+  // Objekt-ID-Marker aus Text-Beschriftungen (Kennungen)
+  const idBox=document.getElementById('idLabels');
+  dxfIdMarkers.forEach(m=>{ if(m.el&&m.el.parentNode)m.el.parentNode.removeChild(m.el); }); dxfIdMarkers.length=0;
+  parsed.entities.filter(e=>e.type==='TEXT').forEach(en=>{ const c=layerCfg[en.layer]||{}; const y=(c.base||0)*M + 1.2*M;
+    const s=new THREE.Mesh(new THREE.SphereGeometry(0.5,12,10), new THREE.MeshStandardMaterial({color:0xffb020,emissive:0x4a3000,roughness:0.4,metalness:0.2}));
+    s.position.set(tx(en.x),y,tz(en.y)); s.userData={layer:en.layer,kind:'objid',objId:en.text,_col:'#ffb020'};
+    dxfGroup.add(s); dxfMeshes.push(s);
+    let el=null; if(idBox){ el=document.createElement('div'); el.className='idlabel'; el.textContent=en.text; idBox.appendChild(el); }
+    dxfIdMarkers.push({mesh:s, el:el});
+  });
 }
 function numStyleDXF(){ return 'width:52px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:5px;padding:3px 5px;font-size:11.5px'; }
 function renderEtageFilter(){
@@ -1193,7 +1221,21 @@ function renderLayers(){
     });
   });
 }
-function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const c=layerCfg[o.userData.layer]||{};o.visible=(o.userData.kind==='line')?(vis&&(showLines|| !c.extrude)):vis;});}
+function applyLayerVis(){const showLines=document.getElementById('showLines').checked;dxfGroup&&dxfGroup.children.forEach(o=>{const vis=layerOn[o.userData.layer]!==false;const c=layerCfg[o.userData.layer]||{};
+  if(o.userData.kind==='line') o.visible=vis&&(showLines|| !c.extrude);
+  else if(o.userData.kind==='objid') o.visible=vis&&showObjIds;
+  else o.visible=vis; });
+  dxfIdMarkers.forEach(m=>{ if(m.el) m.el.style.display=(m.mesh.visible)?'':'none'; });
+}
+function updateIdLabels(){
+  if(mode!=='dxf' || !dxfIdMarkers.length) return;
+  const rect=canvas.getBoundingClientRect();
+  dxfIdMarkers.forEach(m=>{ if(!m.el)return; if(!m.mesh.visible){m.el.style.display='none';return;}
+    const v=m.mesh.position.clone().project(camera);
+    if(v.z>1){m.el.style.display='none';return;}
+    m.el.style.display=''; m.el.style.left=((v.x*0.5+0.5)*rect.width)+'px'; m.el.style.top=((-v.y*0.5+0.5)*rect.height-12)+'px';
+  });
+}
 function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
   parsed=m; uploadName=name||'Hochgeladenes Modell'; hasUpload=true;
   lastDXFText=text; if(opts.serverId!==undefined) currentServerId=opts.serverId; else if(!opts.keepData) currentServerId=null;
@@ -1217,6 +1259,8 @@ function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text
     // Fachdaten setzen (frisch = leer; Server-Modell = gespeicherte)
     Object.keys(layerData).forEach(k=>delete layerData[k]);
     if(opts.layerData) Object.keys(opts.layerData).forEach(n=>{ layerData[n]=opts.layerData[n]; });
+    Object.keys(objectData).forEach(k=>delete objectData[k]);
+    if(opts.objectData) Object.keys(opts.objectData).forEach(n=>{ objectData[n]=opts.objectData[n]; });
   } else {
     // Geometrie-Update: Fachdaten & Konfig behalten, nur neue Layer ergänzen
     Object.keys(m.layers).forEach(n=>{ if(!layerCfg[n])layerCfg[n]=defaultLayerCfg(n); });
@@ -1245,6 +1289,7 @@ document.getElementById('floorH').addEventListener('change',e=>{ floorHeight=par
   Object.keys(layerCfg).forEach(n=>{ const c=layerCfg[n]; c.base=(c.etageIdx||0)*floorHeight; });
   if(mode==='dxf'&&parsed){ renderLayers(); buildDXF(); applyLayerVis(); } });
 document.getElementById('showLines').addEventListener('change',applyLayerVis);
+document.getElementById('showObjIds').addEventListener('change',e=>{ showObjIds=e.target.checked; applyLayerVis(); });
 
 // ============================================================
 //  UI-Verdrahtung
@@ -1525,7 +1570,7 @@ async function loadServerModel(id){
     const r=await fetch('api/models/'+encodeURIComponent(id));
     if(!r.ok)throw new Error('Server '+r.status);
     const data=await r.json();
-    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}});
+    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}, objectData:data.objectData||{}});
   }catch(err){ toast('Standortmodell konnte nicht geladen werden: '+err.message,true); }
 }
 // Neue Geometrie (DWG/DXF) in ein bestehendes Standortmodell laden – Fachdaten bleiben erhalten
@@ -1549,7 +1594,7 @@ async function updateGeometryFromFile(file){
   // auf Server sichern (neue Geometrie + behaltene Fachdaten/Konfig)
   try{
     const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg})});
+      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg, objectData:objectData})});
     if(!r.ok)throw new Error('Server '+r.status);
   }catch(err){ toast('Geometrie geladen, aber Server-Sicherung fehlgeschlagen: '+err.message,true); return; }
   toast('Geometrie aktualisiert · '+wieder+' Layer wiederverknüpft, '+neu+' neu'+(verwaist?', '+verwaist+' verwaist (Daten behalten)':''));
@@ -1563,7 +1608,7 @@ async function saveAsSiteModel(){
   try{
     const oldKey=currentModelKey();
     const pipes=drawnPipes.filter(d=>d.model===oldKey);
-    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg})});
+    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData})});
     if(!r.ok)throw new Error((await r.text().catch(()=>''))||('Server '+r.status));
     const res=await r.json();
     const newKey='srv:'+res.id;
@@ -1580,7 +1625,7 @@ async function saveSitePipes(){
   toast('Änderungen werden gesichert …',false,true);
   try{
     const pipes=drawnPipes.filter(d=>d.model==='srv:'+currentServerId);
-    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg})});
+    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData})});
     if(!r.ok)throw new Error('Server '+r.status);
     toast('Änderungen gesichert (Leitungen + Fachdaten + Layer-Konfig).');
   }catch(err){ toast('Sichern fehlgeschlagen: '+err.message,true); }
@@ -1878,7 +1923,7 @@ document.querySelectorAll('.btnAllVis').forEach(b=>b.onclick=toggleAllVis);
 
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
-(function loop(){requestAnimationFrame(loop);updateFlow();updateMeasureLabels();renderer.render(scene,camera);})();
+(function loop(){requestAnimationFrame(loop);updateFlow();updateMeasureLabels();updateIdLabels();renderer.render(scene,camera);})();
 
 // Start: Beispiel laden + gespeicherte Standortmodelle vom Server holen
 buildDemo();
