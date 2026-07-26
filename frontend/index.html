@@ -55,7 +55,7 @@
   #toast.err{border-color:#c0563d}
   .spin{width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
-  #info{position:absolute;top:14px;right:14px;width:312px;max-height:calc(100% - 28px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(360px);transition:transform .25s}
+  #info{position:absolute;top:140px;right:14px;width:312px;max-height:calc(100% - 154px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.45);transform:translateX(360px);transition:transform .25s;z-index:9}
   #info.open{transform:translateX(0)}
   .info-head{padding:14px 16px 12px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
   .info-head .cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);display:flex;align-items:center;gap:7px}
@@ -94,9 +94,8 @@
   .pipe-step .n{flex:0 0 26px;height:26px;border-radius:8px;background:var(--accent);color:#04121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
   .pipe-step .t b{font-size:13px}
   .pipe-step .t p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
-  #views{position:absolute;right:14px;bottom:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:5px;background:rgba(15,23,32,.7);border:1px solid var(--line);padding:7px;border-radius:9px;backdrop-filter:blur(4px)}
-  #views button{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11.5px;cursor:pointer}
-  #views button:hover{border-color:var(--accent);background:#20303f}
+  #viewcube{position:absolute;right:14px;top:12px;width:116px;height:116px;z-index:6;cursor:pointer}
+  #viewcube canvas{display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))}
   input[type=file]{display:none}
   .toolpanel{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:none;flex-direction:column;gap:9px;background:rgba(15,23,32,.93);border:1px solid var(--line);padding:12px 14px;border-radius:12px;backdrop-filter:blur(6px);z-index:7;width:min(460px,92%);box-shadow:0 12px 34px rgba(0,0,0,.45)}
   .toolpanel.open{display:flex}
@@ -239,14 +238,7 @@
       <span id="stats">–</span>
     </div>
 
-    <div id="views">
-      <button data-v="iso">Iso</button>
-      <button data-v="top">Oben</button>
-      <button data-v="front">Vorne</button>
-      <button data-v="left">Links</button>
-      <button data-v="right">Rechts</button>
-      <button data-v="back">Hinten</button>
-    </div>
+    <div id="viewcube" title="Ansichtswürfel – Fläche, Kante oder Ecke anklicken (oder ziehen zum Drehen)"></div>
 
     <!-- Zeichen-Panel für Leitungen -->
     <div id="drawPanel" class="toolpanel">
@@ -1105,18 +1097,21 @@ const target=new THREE.Vector3(0,3,0);
 let radius=90,theta=-0.9,phi=1.0;
 function applyCam(){const rp=radius*Math.sin(phi);camera.position.set(target.x+rp*Math.sin(theta),target.y+radius*Math.cos(phi),target.z+rp*Math.cos(theta));camera.lookAt(target);}
 let HOME={radius:90,theta:-0.9,phi:1.0,tx:0,ty:3,tz:0};
+let camAnim=null;   // laufende, weiche Kamerafahrt (ViewCube / Ansicht zurücksetzen)
+const ISO_DIR=[-0.9,1.0];  // [theta,phi] der Iso-Standardansicht
+function clampPhi(p){ return Math.max(0.05,Math.min(Math.PI/2-0.02,p)); }
 function fitCamera(size){ radius=Math.max(40,size*1.4); HOME.radius=radius; target.set(mode==='demo'?-3:0,3,0); HOME.tx=target.x;HOME.ty=target.y;HOME.tz=target.z; applyCam(); }
 applyCam();
 let dragging=false,panning=false,lx=0,ly=0;
-canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;camAnim=null;panning=(e.button===2||e.shiftKey||e.button===1);lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
 canvas.addEventListener('pointerup',()=>dragging=false);
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('pointermove',e=>{ if(!dragging){ if(measureMode){canvas.style.cursor='crosshair';if(measurePts.length===1){measureHover=measurePoint(e);updateMeasurePreview();}return;} if(drawMode){canvas.style.cursor='crosshair';updatePreview(groundPoint(e));return;} canvas.style.cursor=pickAt(e)?'pointer':'default';return;} moved=true;
   const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;
   if(panning){const sp=radius*0.0016,right=new THREE.Vector3();camera.getWorldDirection(right);right.cross(camera.up).normalize();target.addScaledVector(right,-dx*sp);target.addScaledVector(new THREE.Vector3(0,1,0),dy*sp);}
   else{theta-=dx*0.006;phi=Math.max(0.05,Math.min(Math.PI/2-0.02,phi-dy*0.006));} applyCam(); });
-canvas.addEventListener('wheel',e=>{e.preventDefault();radius=Math.max(1.2,Math.min(600,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
-document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.theta;phi=HOME.phi;target.set(HOME.tx,HOME.ty,HOME.tz);applyCam();};
+canvas.addEventListener('wheel',e=>{e.preventDefault();camAnim=null;radius=Math.max(1.2,Math.min(600,radius*(1+Math.sign(e.deltaY)*0.09)));applyCam();},{passive:false});
+document.getElementById('btnReset').onclick=()=>{ fitVisible(ISO_DIR[0],ISO_DIR[1]); };
 
 // ============================================================
 //  DXF/DWG Upload
@@ -1368,8 +1363,9 @@ function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text
   transform={cx:(_minX+_maxX)/2,cy:(_minY+_maxY)/2,s:60/size};
   floorHeight=parseFloat((document.getElementById('floorH')||{}).value)||3.25;
   if(!opts.keepData){
-    // Zeichnungseinheit automatisch schätzen (mm/cm/m)
-    dxfUnit = size>3000?'mm':(size>300?'cm':'m');
+    // Zeichnungseinheit: gespeicherte Einheit des Modells bevorzugen, sonst automatisch schätzen (mm/cm/m)
+    if(opts.dxfUnit && ['mm','cm','m'].indexOf(opts.dxfUnit)>=0) dxfUnit=opts.dxfUnit;
+    else dxfUnit = size>3000?'mm':(size>300?'cm':'m');
     const _us=document.getElementById('dxfUnit'); if(_us)_us.value=dxfUnit;
     // Layer-Konfiguration aus Layernamen ableiten, gespeicherte Werte übernehmen
     Object.keys(layerCfg).forEach(k=>delete layerCfg[k]);
@@ -1423,8 +1419,6 @@ document.getElementById('modelSel').addEventListener('change',e=>{ const v=e.tar
   else if(v==='uploaded'){ currentServerId=null; switchTo('uploaded'); }
   else if(v.indexOf('srv:')===0){ loadServerModel(v.slice(4)); }
 });
-const VIEWS={iso:[-0.9,1.0],top:[0,0.06],front:[0,1.54],back:[Math.PI,1.54],left:[-Math.PI/2,1.54],right:[Math.PI/2,1.54]};
-document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>{const v=VIEWS[b.dataset.v];theta=v[0];phi=v[1];applyCam();});
 const stage=document.getElementById('stage'),drop=document.getElementById('drop');
 document.getElementById('btnOpen').addEventListener('dblclick',()=>drop.classList.remove('hide'));
 ['dragenter','dragover'].forEach(ev=>stage.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hide');drop.classList.add('hot');}));
@@ -1689,7 +1683,7 @@ async function loadServerModel(id){
     const r=await fetch('api/models/'+encodeURIComponent(id));
     if(!r.ok)throw new Error('Server '+r.status);
     const data=await r.json();
-    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}, objectData:data.objectData||{}, norm:data.norm||null});
+    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}, objectData:data.objectData||{}, norm:data.norm||null, dxfUnit:data.dxfUnit||null});
   }catch(err){ toast('Standortmodell konnte nicht geladen werden: '+err.message,true); }
 }
 // Neue Geometrie (DWG/DXF) in ein bestehendes Standortmodell laden – Fachdaten bleiben erhalten
@@ -1713,7 +1707,7 @@ async function updateGeometryFromFile(file){
   // auf Server sichern (neue Geometrie + behaltene Fachdaten/Konfig)
   try{
     const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg, objectData:objectData, norm:NORM})});
+      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg, objectData:objectData, norm:NORM, dxfUnit:dxfUnit})});
     if(!r.ok)throw new Error('Server '+r.status);
   }catch(err){ toast('Geometrie geladen, aber Server-Sicherung fehlgeschlagen: '+err.message,true); return; }
   toast('Geometrie aktualisiert · '+wieder+' Layer wiederverknüpft, '+neu+' neu'+(verwaist?', '+verwaist+' verwaist (Daten behalten)':''));
@@ -1727,7 +1721,7 @@ async function saveAsSiteModel(){
   try{
     const oldKey=currentModelKey();
     const pipes=drawnPipes.filter(d=>d.model===oldKey);
-    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM})});
+    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM,dxfUnit:dxfUnit})});
     if(!r.ok)throw new Error((await r.text().catch(()=>''))||('Server '+r.status));
     const res=await r.json();
     const newKey='srv:'+res.id;
@@ -1744,7 +1738,7 @@ async function saveSitePipes(){
   toast('Änderungen werden gesichert …',false,true);
   try{
     const pipes=drawnPipes.filter(d=>d.model==='srv:'+currentServerId);
-    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM})});
+    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM,dxfUnit:dxfUnit})});
     if(!r.ok)throw new Error('Server '+r.status);
     toast('Änderungen gesichert (Leitungen + Fachdaten + Layer-Konfig + Norm).');
   }catch(err){ toast('Sichern fehlgeschlagen: '+err.message,true); }
@@ -2040,9 +2034,145 @@ function updateAllBtnLabel(){
 }
 document.querySelectorAll('.btnAllVis').forEach(b=>b.onclick=toggleAllVis);
 
+// ============================================================
+//  Ansicht einpassen (nur sichtbare Layer) + weiche Kamerafahrt
+// ============================================================
+// Bounding-Box aller SICHTBAREN Objekte (eingeschaltete Layer) im aktiven Modell
+function computeVisibleBox(){
+  scene.updateMatrixWorld(true);
+  const box=new THREE.Box3(), tmp=new THREE.Box3(); let has=false;
+  const roots=[];
+  if(mode==='demo'){ if(demoGroup)roots.push(demoGroup); } else { if(dxfGroup)roots.push(dxfGroup); }
+  if(typeof drawnGroup!=='undefined'&&drawnGroup)roots.push(drawnGroup);
+  function walk(o){
+    if(o.visible===false)return;
+    if(o.geometry){
+      if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();
+      const bb=o.geometry.boundingBox;
+      if(bb&&isFinite(bb.min.x)&&isFinite(bb.max.x)){
+        tmp.copy(bb).applyMatrix4(o.matrixWorld);
+        if(isFinite(tmp.min.x)){ box.union(tmp); has=true; }
+      }
+    }
+    if(o.children)for(let i=0;i<o.children.length;i++)walk(o.children[i]);
+  }
+  roots.forEach(walk);
+  return has?box:null;
+}
+// Kamera weich auf Ziel-Winkel/-Radius/-Target fahren (kürzester Winkelweg für theta)
+function animateCamTo(th,ph,r,tar){
+  let dth=th-theta; while(dth>Math.PI)dth-=2*Math.PI; while(dth<-Math.PI)dth+=2*Math.PI;
+  camAnim={th0:theta,dth:dth,ph0:phi,ph1:clampPhi(ph),r0:radius,r1:r,c0:target.clone(),c1:tar.clone(),p:0};
+}
+function stepCamAnim(){
+  if(!camAnim)return;
+  camAnim.p=Math.min(1,camAnim.p+0.09);
+  const t=camAnim.p, k=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;   // ease-in-out
+  theta=camAnim.th0+camAnim.dth*k;
+  phi=camAnim.ph0+(camAnim.ph1-camAnim.ph0)*k;
+  radius=camAnim.r0+(camAnim.r1-camAnim.r0)*k;
+  target.lerpVectors(camAnim.c0,camAnim.c1,k);
+  applyCam();
+  if(camAnim.p>=1)camAnim=null;
+}
+// Sichtbare Layer passend ins Bild zoomen; optional Blickwinkel (theta,phi) setzen
+function fitVisible(th,ph){
+  const box=computeVisibleBox();
+  let tar=target.clone(), rad=radius;
+  if(box){
+    box.getCenter(tar);
+    const sz=new THREE.Vector3(); box.getSize(sz);
+    const sphereR=0.5*Math.sqrt(sz.x*sz.x+sz.y*sz.y+sz.z*sz.z)||1;
+    const fov=camera.fov*Math.PI/180;
+    const hfov=2*Math.atan(Math.tan(fov/2)*Math.max(0.2,camera.aspect));
+    rad=Math.max(2, Math.max(sphereR/Math.sin(fov/2), sphereR/Math.sin(hfov/2))*1.08);
+    rad=Math.min(rad,590);
+  }
+  const nth=(th==null?theta:th), nph=(ph==null?phi:clampPhi(ph));
+  animateCamTo(nth,nph,rad,tar);
+}
+// Richtung (Blick von …) -> Kugelkoordinaten des Orbits
+function dirToAngles(d){
+  const v=new THREE.Vector3(d[0],d[1],d[2]);
+  if(v.lengthSq()<1e-6)return null; v.normalize();
+  let ph=Math.acos(Math.max(-1,Math.min(1,v.y)));
+  let th=theta;
+  if(Math.sin(ph)>1e-3) th=Math.atan2(v.x,v.z);
+  return {th:th,ph:ph};
+}
+
+// ============================================================
+//  ViewCube – wie in AutoCAD: dreht live mit, Klick wählt Ansicht
+// ============================================================
+const ViewCube=(function(){
+  const host=document.getElementById('viewcube');
+  if(!host||typeof THREE==='undefined')return {render:function(){}};
+  const SIZE=116;
+  let cr;
+  try{ cr=new THREE.WebGLRenderer({alpha:true,antialias:true}); }catch(e){ return {render:function(){}}; }
+  cr.setPixelRatio(Math.min(devicePixelRatio,2));
+  cr.setSize(SIZE,SIZE,false);
+  host.appendChild(cr.domElement);
+  const cScene=new THREE.Scene();
+  cScene.add(new THREE.HemisphereLight(0xffffff,0x5a6675,1.15));
+  const dl=new THREE.DirectionalLight(0xffffff,0.5); dl.position.set(2,3,4); cScene.add(dl);
+  const cCam=new THREE.OrthographicCamera(-0.95,0.95,0.95,-0.95,0.1,20);
+  // Beschriftungs-Textur je Fläche
+  function faceTex(label){
+    const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
+    g.fillStyle='#e9eef4'; g.fillRect(0,0,128,128);
+    g.strokeStyle='#9aa7b6'; g.lineWidth=6; g.strokeRect(3,3,122,122);
+    g.fillStyle='#20303f'; g.font='bold 21px Segoe UI, Arial, sans-serif';
+    g.textAlign='center'; g.textBaseline='middle'; g.fillText(label,64,66);
+    const t=new THREE.CanvasTexture(c); t.anisotropy=4; return t;
+  }
+  // BoxGeometry-Materialreihenfolge: +X,-X,+Y,-Y,+Z,-Z
+  const labels=['RECHTS','LINKS','OBEN','UNTEN','VORN','HINTEN'];
+  const mats=labels.map(l=>new THREE.MeshBasicMaterial({map:faceTex(l)}));
+  const cube=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),mats);
+  cScene.add(cube);
+  const edges=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1.002,1.002,1.002)),new THREE.LineBasicMaterial({color:0x3a4c60}));
+  cScene.add(edges);
+  const _dir=new THREE.Vector3();
+  function render(){
+    _dir.copy(camera.position).sub(target);
+    if(_dir.lengthSq()<1e-6)_dir.set(0,1,0.001);
+    _dir.normalize();
+    cCam.position.copy(_dir).multiplyScalar(3.4);
+    cCam.up.set(0,1,0);
+    cCam.lookAt(0,0,0);
+    cr.render(cScene,cCam);
+  }
+  // Klick/Zieh-Interaktion
+  const ray=new THREE.Raycaster();
+  let cdown=false, cmoved=false, cx=0, cy=0;
+  const el=cr.domElement;
+  el.addEventListener('pointerdown',e=>{ cdown=true; cmoved=false; cx=e.clientX; cy=e.clientY; camAnim=null; el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  el.addEventListener('pointermove',e=>{ if(!cdown)return; const dx=e.clientX-cx, dy=e.clientY-cy; if(Math.abs(dx)+Math.abs(dy)>3)cmoved=true;
+    cx=e.clientX; cy=e.clientY; theta-=dx*0.01; phi=clampPhi(phi-dy*0.01); applyCam(); });
+  el.addEventListener('pointerup',e=>{ if(!cdown)return; cdown=false;
+    if(cmoved)return;   // war ein Drehen, kein Flächenklick
+    const rect=el.getBoundingClientRect();
+    const nx=((e.clientX-rect.left)/rect.width)*2-1, ny=-((e.clientY-rect.top)/rect.height)*2+1;
+    ray.setFromCamera({x:nx,y:ny},cCam);
+    const hit=ray.intersectObject(cube,false)[0];
+    if(!hit)return;
+    const p=hit.point, TH=0.30;
+    let d=[Math.abs(p.x)>=TH?Math.sign(p.x):0, Math.abs(p.y)>=TH?Math.sign(p.y):0, Math.abs(p.z)>=TH?Math.sign(p.z):0];
+    if(d[0]===0&&d[1]===0&&d[2]===0){ // Fallback: dominante Achse
+      const ax=Math.abs(p.x),ay=Math.abs(p.y),az=Math.abs(p.z);
+      if(ax>=ay&&ax>=az)d[0]=Math.sign(p.x)||1; else if(ay>=az)d[1]=Math.sign(p.y)||1; else d[2]=Math.sign(p.z)||1;
+    }
+    const ang=dirToAngles(d);
+    if(ang) fitVisible(ang.th,ang.ph);
+  });
+  el.addEventListener('pointercancel',()=>{cdown=false;});
+  return {render:render};
+})();
+
 function resize(){const s=document.getElementById('stage'),w=s.clientWidth,h=s.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
 addEventListener('resize',resize);resize();
-(function loop(){requestAnimationFrame(loop);updateFlow();updateMeasureLabels();updateIdLabels();renderer.render(scene,camera);})();
+(function loop(){requestAnimationFrame(loop);stepCamAnim();updateFlow();updateMeasureLabels();updateIdLabels();renderer.render(scene,camera);ViewCube.render();})();
 
 // Start: Beispiel laden + gespeicherte Standortmodelle vom Server holen
 buildDemo();
