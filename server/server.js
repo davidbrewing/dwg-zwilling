@@ -115,7 +115,7 @@ app.get('/api/models/:id', (req, res) => {
   let data = {};
   try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
   const meta = readIndex().find(m => m.id === id) || {};
-  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes, layerData: data.layerData || {}, layerCfg: data.layerCfg || {}, objectData: data.objectData || {}, norm: data.norm || null });
+  res.json({ id, name: meta.name || 'Standortmodell', dxf, pipes, layerData: data.layerData || {}, layerCfg: data.layerCfg || {}, objectData: data.objectData || {}, norm: data.norm || null, dxfUnit: data.dxfUnit || null });
 });
 
 app.post('/api/models', (req, res) => {
@@ -127,7 +127,8 @@ app.post('/api/models', (req, res) => {
   const data = { layerData: (body.layerData && typeof body.layerData === 'object') ? body.layerData : {},
                  layerCfg: (body.layerCfg && typeof body.layerCfg === 'object') ? body.layerCfg : {},
                  objectData: (body.objectData && typeof body.objectData === 'object') ? body.objectData : {},
-                 norm: (body.norm && typeof body.norm === 'object') ? body.norm : null };
+                 norm: (body.norm && typeof body.norm === 'object') ? body.norm : null,
+                 dxfUnit: (typeof body.dxfUnit === 'string') ? body.dxfUnit : null };
   try {
     fs.writeFileSync(path.join(MODELS_DIR, id + '.dxf'), dxf);
     fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(pipes));
@@ -165,13 +166,14 @@ app.put('/api/models/:id', (req, res) => {
   try {
     if (typeof body.dxf === 'string' && body.dxf.length) fs.writeFileSync(dxfP, body.dxf);
     if (Array.isArray(body.pipes)) fs.writeFileSync(path.join(MODELS_DIR, id + '.pipes.json'), JSON.stringify(body.pipes));
-    if (body.layerData !== undefined || body.layerCfg !== undefined || body.objectData !== undefined || body.norm !== undefined) {
+    if (body.layerData !== undefined || body.layerCfg !== undefined || body.objectData !== undefined || body.norm !== undefined || body.dxfUnit !== undefined) {
       let data = {};
       try { data = JSON.parse(fs.readFileSync(path.join(MODELS_DIR, id + '.data.json'), 'utf8')); } catch (e) { data = {}; }
       if (body.layerData !== undefined) data.layerData = body.layerData;
       if (body.layerCfg !== undefined) data.layerCfg = body.layerCfg;
       if (body.objectData !== undefined) data.objectData = body.objectData;
       if (body.norm !== undefined) data.norm = body.norm;
+      if (body.dxfUnit !== undefined) data.dxfUnit = body.dxfUnit;
       fs.writeFileSync(path.join(MODELS_DIR, id + '.data.json'), JSON.stringify(data));
     }
     if (typeof body.name === 'string' && body.name.trim()) {
