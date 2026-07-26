@@ -88,6 +88,9 @@
   select,.sel{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:13px}
   textarea.export{width:100%;height:250px;background:#0b1017;color:#bfe3ff;border:1px solid var(--line);border-radius:9px;padding:12px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;resize:vertical;margin-top:6px}
   .pipe-step{display:flex;gap:12px;padding:11px;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--panel2)}
+  .normtbl th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;padding:2px 6px 5px 2px;border-bottom:1px solid var(--line)}
+  .normtbl td{padding:3px 6px 3px 2px;vertical-align:middle}
+  code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-family:ui-monospace,Consolas,monospace;font-size:.92em}
   .pipe-step .n{flex:0 0 26px;height:26px;border-radius:8px;background:var(--accent);color:#04121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
   .pipe-step .t b{font-size:13px}
   .pipe-step .t p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
@@ -187,6 +190,9 @@
         <input type="file" id="geomFile" accept=".dxf,.dwg">
         <div class="empty" id="srvHint" style="margin-top:6px">Nach dem Hochladen dauerhaft auf dem Server ablegen – dann über den Link für alle sichtbar. Fachdaten je Layer bleiben beim Aktualisieren der Geometrie erhalten.</div>
       </div>
+      <div class="sec-title">Layer-Norm</div>
+      <button class="btn" id="btnNorm" style="width:100%;margin-bottom:7px">📐 Layerstruktur ansehen / bearbeiten</button>
+      <div class="empty" style="margin-bottom:4px">Vorgaben zur Layer-Benennung (GEBÄUDE-ETAGE-BAUTEIL) – steuert die automatische Extrusion.</div>
       <div class="sec-title">Extrusion &amp; Etagen</div>
       <div class="ctrl"><label for="dxfUnit">Zeichnungseinheit</label>
         <select id="dxfUnit" class="sel" style="padding:5px 8px"><option value="mm">Millimeter</option><option value="cm">Zentimeter</option><option value="m">Meter</option></select></div>
@@ -355,6 +361,22 @@
     <div class="pipe-step"><div class="n">1</div><div class="t"><b>Geometrie extrahieren</b><p>DWG/DXF wird nach Layern eingelesen.</p></div></div>
     <div class="pipe-step"><div class="n">2</div><div class="t"><b>3D ableiten</b><p>Konturen werden zu Körpern, Bauteile klassifiziert.</p></div></div>
     <div class="pipe-step"><div class="n">3</div><div class="t"><b>Fachdaten verknüpfen</b><p>Statik, Anlagen, Wartung werden zugeordnet.</p></div></div>
+  </div>
+</div>
+
+<!-- Layer-Norm-Modal (Layerstruktur ansehen & bearbeiten) -->
+<div class="overlay" id="normOverlay">
+  <div class="modal" style="width:min(900px,95vw)">
+    <button class="close-x" data-close>×</button>
+    <h3>Layer-Norm · Vorgaben für die DWG-Layer</h3>
+    <p class="lead">Diese Norm legt fest, wie Layer in der DWG benannt werden – Schema <b>GEBÄUDE-ETAGE-BAUTEIL</b> (Trennzeichen <code>-</code>, <code>_</code> oder <code>.</code>, Groß-/Kleinschreibung egal). Das Tool erkennt daraus Etage, Bauteil und leitet Extrusionshöhe und Etagenlage ab. Hier lässt sich die Norm ansehen, anpassen und ergänzen. <b>Schlüsselwörter</b> sind die Tokens, die im Layernamen vorkommen dürfen (mehrere durch Komma trennen).</p>
+    <div id="normBody"></div>
+    <div class="modal-row" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <button class="btn primary" id="normApply">✓ Norm übernehmen & auf Modell anwenden</button>
+      <button class="btn" id="normReset">↺ Standard wiederherstellen</button>
+      <button class="btn" id="normCopyConv">📋 Namens-Regeln kopieren</button>
+      <span id="normHint" style="font-size:12px;color:var(--muted)"></span>
+    </div>
   </div>
 </div>
 
@@ -1100,7 +1122,122 @@ document.getElementById('btnReset').onclick=()=>{radius=HOME.radius;theta=HOME.t
 //  DXF/DWG Upload
 // ============================================================
 function setUIMode(m){ mode=m; document.getElementById('demoFilters').style.display=(m==='demo')?'':'none'; document.getElementById('dxfFilters').style.display=(m==='dxf')?'':'none'; }
-const MEDIA_RE=/HEIZ|WASSER|LUEFT|LÜFT|ELEKTRO|DRUCK|WAERME|WÄRME|KAELTE|KÄLTE|MEDIEN|LEITUNG|KABEL|ROHR/i;
+// ---- Editierbare Layer-Norm (steuert Auto-Extrusion + wird im Tool angezeigt/bearbeitet) ----
+const DEFAULT_NORM={
+  etagen:[
+    {label:'UG',idx:-1,keys:['UG','KG','UNTERGESCHOSS']},
+    {label:'EG',idx:0,keys:['EG','ERDGESCHOSS']},
+    {label:'1.OG',idx:1,keys:['1OG','1.OG','OG1']},
+    {label:'2.OG',idx:2,keys:['2OG','2.OG','OG2']},
+    {label:'3.OG',idx:3,keys:['3OG','OG3']},
+    {label:'4.OG',idx:4,keys:['4OG','OG4']},
+    {label:'DG',idx:5,keys:['DG','DACH','DACHGESCHOSS']}
+  ],
+  bauteile:[
+    {label:'Außenwand',keys:['AUSSENWAND','AW'],height:3.0,sill:0},
+    {label:'Innenwand',keys:['INNENWAND','IW'],height:2.75,sill:0},
+    {label:'Fenster',keys:['FENSTER','FEN'],height:1.4,sill:0.9},
+    {label:'Tür',keys:['TUER','TÜR','DOOR'],height:2.1,sill:0},
+    {label:'Stütze',keys:['STUETZE','STÜTZE','STB'],height:3.0,sill:0},
+    {label:'Brüstung',keys:['BRUEST','BRÜST','GELAENDER'],height:1.0,sill:0},
+    {label:'Sanitär',keys:['WC','SANITAER','WASCHB','URINAL'],height:0.4,sill:0},
+    {label:'Treppe',keys:['TREPPE','STAIR'],height:3.0,sill:0},
+    {label:'Decke/Boden',keys:['DECKE','SLAB','BODENPLATTE'],height:0.2,sill:0}
+  ],
+  gebaeude:[
+    {code:'VERW',label:'Verwaltung'},{code:'PROD',label:'Produktion'},{code:'LAG',label:'Lager'},
+    {code:'TECH',label:'Technik'},{code:'BUERO',label:'Büro'},{code:'HALLE',label:'Halle'}
+  ],
+  medien:['HEIZ','WASSER','LUEFT','LÜFT','ELEKTRO','DRUCK','WAERME','WÄRME','KAELTE','KÄLTE','MEDIEN','LEITUNG','KABEL','ROHR']
+};
+let NORM=JSON.parse(JSON.stringify(DEFAULT_NORM));
+function normTokenMatch(name,keys){ const up=String(name).toUpperCase(); const parts=up.split(/[-_.\s]+/).filter(Boolean);
+  for(const k of (keys||[])){ const K=String(k).toUpperCase().trim(); if(!K)continue; if(parts.indexOf(K)>=0)return true; }
+  for(const k of (keys||[])){ const K=String(k).toUpperCase().trim(); if(K.length>=4 && up.indexOf(K)>=0)return true; }
+  return false;
+}
+function isMedia(name){ const up=String(name).toUpperCase(); return (NORM.medien||[]).some(k=>{const K=String(k).toUpperCase().trim(); return K && up.indexOf(K)>=0;}); }
+// ---- Norm setzen (validieren/normalisieren) ----
+function setNorm(n){
+  try{
+    const clean={etagen:[],bauteile:[],gebaeude:[],medien:[]};
+    (n.etagen||[]).forEach(e=>{ if(e&&e.label!=null)clean.etagen.push({label:String(e.label),idx:parseInt(e.idx,10)||0,keys:(e.keys||[]).map(k=>String(k))}); });
+    (n.bauteile||[]).forEach(b=>{ if(b&&b.label!=null)clean.bauteile.push({label:String(b.label),keys:(b.keys||[]).map(k=>String(k)),height:parseFloat(b.height)||0,sill:parseFloat(b.sill)||0}); });
+    (n.gebaeude||[]).forEach(g=>{ if(g&&g.code!=null)clean.gebaeude.push({code:String(g.code),label:String(g.label||g.code)}); });
+    clean.medien=(n.medien||[]).map(m=>String(m)).filter(Boolean);
+    if(clean.etagen.length||clean.bauteile.length){ NORM=clean; return true; }
+  }catch(e){}
+  return false;
+}
+// ---- Namens-Regeln als Text (zum Kopieren / Weitergeben an DWG-Bearbeiter) ----
+function normConventionText(){
+  let t='Layer-Namensschema: GEBÄUDE-ETAGE-BAUTEIL  (Trennzeichen - _ .)\n\n';
+  t+='GEBÄUDE (Feld 1):\n';
+  (NORM.gebaeude||[]).forEach(g=>t+='  '+g.code+'  = '+g.label+'\n');
+  t+='  (weitere Kürzel erlaubt – werden als Gebäudename übernommen)\n\n';
+  t+='ETAGE (Feld 2) – steuert die Sockelhöhe:\n';
+  (NORM.etagen||[]).forEach(e=>t+='  '+e.keys.join(' / ')+'  → '+e.label+'  (Basis '+e.idx+' × Geschosshöhe)\n');
+  t+='\nBAUTEIL (Feld 3) – steuert die Extrusionshöhe:\n';
+  (NORM.bauteile||[]).forEach(b=>t+='  '+b.keys.join(' / ')+'  → '+b.label+'  (H='+b.height+' m'+(b.sill?', Brüstung '+b.sill+' m':'')+')\n');
+  t+='\nMEDIEN (nicht extrudiert, als Trassenlinie gezeigt):\n  '+(NORM.medien||[]).join(', ')+'\n';
+  t+='\nGeschosshöhe: '+floorHeight+' m\n';
+  t+='\nBeispiele:\n  VERW-EG-AUSSENWAND\n  VERW-1OG-INNENWAND\n  PROD-EG-STUETZE\n  VERW-EG-MEDIEN-ELEKTRO\n  VERW-1OG-KENNUNG  (Objekt-IDs / Text-Kennungen)\n';
+  return t;
+}
+// ---- Norm-Editor rendern ----
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function renderNormEditor(){
+  const box=document.getElementById('normBody'); if(!box)return;
+  const inp=(v,ph,w,step)=>'<input value="'+esc(v)+'" placeholder="'+esc(ph||'')+'" style="width:'+(w||'100%')+';background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12.5px"'+(step!=null?' type="number" step="'+step+'"':'')+'>';
+  const rm='<button class="btn nrm-del" style="padding:4px 9px" title="Zeile entfernen">✕</button>';
+  let h='';
+  // Geschosshöhe
+  h+='<div class="modal-row" style="margin-bottom:14px"><label style="font-size:13px;color:var(--muted)">Geschosshöhe (m) – Abstand zwischen den Etagen:</label>'+
+     '<input id="normFloorH" type="number" step="0.05" min="1" value="'+esc(floorHeight)+'" style="width:80px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:6px 8px"></div>';
+  // Etagen
+  h+='<div class="sec-title" style="margin-top:6px">Etagen <span style="color:var(--muted);font-weight:400;font-size:11px">· Label · Ebene (0=EG, 1=1.OG, −1=UG) · Schlüsselwörter</span></div>';
+  h+='<table class="normtbl" data-tbl="etagen" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th>Label</th><th style="width:80px">Ebene</th><th>Schlüsselwörter</th><th style="width:36px"></th></tr></thead><tbody>';
+  (NORM.etagen||[]).forEach(e=>{ h+='<tr><td>'+inp(e.label,'z. B. 1.OG')+'</td><td>'+inp(e.idx,'',null,'1')+'</td><td>'+inp((e.keys||[]).join(', '),'1OG, OG1')+'</td><td>'+rm+'</td></tr>'; });
+  h+='</tbody></table><button class="btn nrm-add" data-add="etagen" style="margin-top:6px;padding:5px 11px">+ Etage</button>';
+  // Bauteile
+  h+='<div class="sec-title" style="margin-top:16px">Bauteile <span style="color:var(--muted);font-weight:400;font-size:11px">· Bezeichnung · Schlüsselwörter · Höhe (m) · Brüstung (m)</span></div>';
+  h+='<table class="normtbl" data-tbl="bauteile" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th>Bauteil</th><th>Schlüsselwörter</th><th style="width:70px">Höhe</th><th style="width:78px">Brüstung</th><th style="width:36px"></th></tr></thead><tbody>';
+  (NORM.bauteile||[]).forEach(b=>{ h+='<tr><td>'+inp(b.label,'Außenwand')+'</td><td>'+inp((b.keys||[]).join(', '),'AUSSENWAND, AW')+'</td><td>'+inp(b.height,'',null,'0.05')+'</td><td>'+inp(b.sill||0,'',null,'0.05')+'</td><td>'+rm+'</td></tr>'; });
+  h+='</tbody></table><button class="btn nrm-add" data-add="bauteile" style="margin-top:6px;padding:5px 11px">+ Bauteil</button>';
+  // Gebäude
+  h+='<div class="sec-title" style="margin-top:16px">Gebäude-Kürzel <span style="color:var(--muted);font-weight:400;font-size:11px">· Kürzel (Feld 1) · Bezeichnung</span></div>';
+  h+='<table class="normtbl" data-tbl="gebaeude" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="width:120px">Kürzel</th><th>Bezeichnung</th><th style="width:36px"></th></tr></thead><tbody>';
+  (NORM.gebaeude||[]).forEach(g=>{ h+='<tr><td>'+inp(g.code,'VERW')+'</td><td>'+inp(g.label,'Verwaltung')+'</td><td>'+rm+'</td></tr>'; });
+  h+='</tbody></table><button class="btn nrm-add" data-add="gebaeude" style="margin-top:6px;padding:5px 11px">+ Gebäude</button>';
+  // Medien
+  h+='<div class="sec-title" style="margin-top:16px">Medien-Schlüsselwörter <span style="color:var(--muted);font-weight:400;font-size:11px">· nicht extrudiert, als Trassenlinie</span></div>';
+  h+='<textarea id="normMedien" style="width:100%;height:56px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:8px;font-size:12.5px;resize:vertical">'+esc((NORM.medien||[]).join(', '))+'</textarea>';
+  box.innerHTML=h;
+  // Interaktion: Zeilen hinzufügen/entfernen
+  box.querySelectorAll('.nrm-add').forEach(btn=>btn.onclick=()=>{ const tbl=box.querySelector('table[data-tbl="'+btn.getAttribute('data-add')+'"] tbody'); readNormFromEditor(); const which=btn.getAttribute('data-add');
+    if(which==='etagen')NORM.etagen.push({label:'',idx:0,keys:[]}); else if(which==='bauteile')NORM.bauteile.push({label:'',keys:[],height:3.0,sill:0}); else if(which==='gebaeude')NORM.gebaeude.push({code:'',label:''}); renderNormEditor(); });
+  box.querySelectorAll('.nrm-del').forEach(btn=>btn.onclick=()=>{ const tr=btn.closest('tr'), tbody=tr.parentNode, tbl=tbody.closest('table').getAttribute('data-tbl'); const idx=Array.prototype.indexOf.call(tbody.children,tr); readNormFromEditor(); NORM[tbl].splice(idx,1); renderNormEditor(); });
+}
+// ---- Editor-Inhalt zurück in NORM lesen ----
+function readNormFromEditor(){
+  const box=document.getElementById('normBody'); if(!box)return;
+  const rows=(tbl)=>Array.prototype.slice.call(box.querySelectorAll('table[data-tbl="'+tbl+'"] tbody tr'));
+  const keysOf=s=>String(s||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const et=rows('etagen').map(tr=>{ const i=tr.querySelectorAll('input'); return {label:i[0].value.trim(),idx:parseInt(i[1].value,10)||0,keys:keysOf(i[2].value)}; }).filter(e=>e.label);
+  const bt=rows('bauteile').map(tr=>{ const i=tr.querySelectorAll('input'); return {label:i[0].value.trim(),keys:keysOf(i[1].value),height:parseFloat(i[2].value)||0,sill:parseFloat(i[3].value)||0}; }).filter(b=>b.label);
+  const gb=rows('gebaeude').map(tr=>{ const i=tr.querySelectorAll('input'); return {code:i[0].value.trim(),label:i[1].value.trim()||i[0].value.trim()}; }).filter(g=>g.code);
+  const md=String((box.querySelector('#normMedien')||{}).value||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const fh=parseFloat((box.querySelector('#normFloorH')||{}).value); if(fh>0){ floorHeight=fh; const fhi=document.getElementById('floorH'); if(fhi)fhi.value=fh; }
+  NORM={etagen:et,bauteile:bt,gebaeude:gb,medien:md};
+}
+// ---- Norm auf aktuelles Modell anwenden: Layer-Konfig neu ableiten ----
+function applyNormToModel(){
+  if(parsed){ Object.keys(parsed.layers).forEach(n=>{ layerCfg[n]=defaultLayerCfg(n); }); if(typeof buildDXF==='function')buildDXF(); if(typeof renderLayers==='function')renderLayers(); if(typeof renderEtageFilter==='function')renderEtageFilter(); if(typeof applyLayerVis==='function')applyLayerVis(); }
+}
+document.getElementById('btnNorm').onclick=()=>{ renderNormEditor(); document.getElementById('normHint').textContent=''; document.getElementById('normOverlay').classList.add('open'); };
+document.getElementById('normApply').onclick=()=>{ readNormFromEditor(); applyNormToModel(); renderNormEditor(); document.getElementById('normHint').textContent='Norm übernommen'+(parsed?' · Modell aktualisiert':'.')+(currentServerId?' – „Änderungen sichern" speichert dauerhaft.':''); toast('Layer-Norm übernommen'+(parsed?' und auf das Modell angewendet.':'.')); };
+document.getElementById('normReset').onclick=()=>{ if(!confirm('Layer-Norm auf die Standard-Vorgaben zurücksetzen?'))return; NORM=JSON.parse(JSON.stringify(DEFAULT_NORM)); renderNormEditor(); applyNormToModel(); document.getElementById('normHint').textContent='Auf Standard zurückgesetzt.'; };
+document.getElementById('normCopyConv').onclick=()=>{ readNormFromEditor(); const t=normConventionText(); navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>toast('Namens-Regeln in die Zwischenablage kopiert.'),()=>toast('Kopieren nicht möglich.',true)); };
 // ---- Layerstruktur: Etage · Bauteil aus dem Layernamen ableiten ----
 let dxfUnit='m', floorHeight=3.25; const layerCfg={};
 const layerData={};   // Fachdaten je Layer (überleben Geometrie-Neuladen)
@@ -1114,45 +1251,25 @@ function textToDocs(t){ return String(t||'').split(/\n+/).map(s=>s.trim()).filte
 function docsToText(a){ return (a||[]).map(d=>d.name).join('\n'); }
 function ensureLayerData(layer){ if(!layerData[layer])layerData[layer]={statik:{},energie:{},wartung:{},dokumente:[],notiz:''}; return layerData[layer]; }
 function layerHasData(ld){ return ld && ((ld.statik&&Object.keys(ld.statik).length)||(ld.energie&&Object.keys(ld.energie).length)||(ld.wartung&&Object.keys(ld.wartung).length)||(ld.dokumente&&ld.dokumente.length)||(ld.notiz&&ld.notiz.trim())); }
-const ETAGEN=[
-  {re:/(^|[^A-Z0-9])(UG|KG|UNTERGESCHOSS)([^A-Z0-9]|$)/i,idx:-1,label:'UG'},
-  {re:/(^|[^A-Z0-9])(EG|ERDGESCHOSS)([^A-Z0-9]|$)/i,idx:0,label:'EG'},
-  {re:/(^|[^A-Z0-9])(1\.?OG|OG1)([^A-Z0-9]|$)/i,idx:1,label:'1.OG'},
-  {re:/(^|[^A-Z0-9])(2\.?OG|OG2)([^A-Z0-9]|$)/i,idx:2,label:'2.OG'},
-  {re:/(^|[^A-Z0-9])(3\.?OG|OG3)([^A-Z0-9]|$)/i,idx:3,label:'3.OG'},
-  {re:/(^|[^A-Z0-9])(4\.?OG|OG4)([^A-Z0-9]|$)/i,idx:4,label:'4.OG'},
-  {re:/(^|[^A-Z0-9])(DG|DACH|DACHGESCHOSS)([^A-Z0-9]|$)/i,idx:5,label:'DG'},
-];
-const BAUTEILE=[
-  {re:/AUSSENWAND|AUSSENW|AWAND|(^|[^A-Z])AW([^A-Z]|$)/i,key:'aussenwand',label:'Außenwand',h:3.0},
-  {re:/INNENWAND|INNENW|IWAND|(^|[^A-Z])IW([^A-Z]|$)/i,key:'innenwand',label:'Innenwand',h:2.75},
-  {re:/FENSTER|FENST|WINDOW|(^|[^A-Z])FEN([^A-Z]|$)/i,key:'fenster',label:'Fenster',h:1.4,sill:0.9},
-  {re:/TUER|TÜR|DOOR/i,key:'tuer',label:'Tür',h:2.1},
-  {re:/STUETZE|STÜTZE|STUTZE|COLUMN|(^|[^A-Z])STB([^A-Z]|$)/i,key:'stuetze',label:'Stütze',h:3.0},
-  {re:/BRUEST|BRÜST|GELAENDER|GELÄNDER|RAILING/i,key:'bruestung',label:'Brüstung',h:1.0},
-  {re:/WC|SANITAER|SANITÄR|TOILETTE|WASCHB|URINAL/i,key:'sanitaer',label:'Sanitär',h:0.4},
-  {re:/TREPPE|STAIR/i,key:'treppe',label:'Treppe',h:3.0},
-  {re:/DECKE|SLAB|BODENPLATTE/i,key:'decke',label:'Decke/Boden',h:0.2},
-];
-const GEB_LABELS={VERW:'Verwaltung',PROD:'Produktion',LAG:'Lager',TECH:'Technik',BUERO:'Büro',HALLE:'Halle'};
 function parseLayer(name){
-  let etage=null; for(const e of ETAGEN){ if(e.re.test(name)){etage=e;break;} }
-  let bt=null; for(const b of BAUTEILE){ if(b.re.test(name)){bt=b;break;} }
-  const media=MEDIA_RE.test(name);
+  let etage=null; for(const e of NORM.etagen){ if(normTokenMatch(name,e.keys)){etage=e;break;} }
+  let bt=null; for(const b of NORM.bauteile){ if(normTokenMatch(name,b.keys)){bt=b;break;} }
+  const media=isMedia(name);
   const parts=String(name).split(/[-_.\s]+/).filter(Boolean);
   const gebTok=parts.length?parts[0].toUpperCase():'';
-  const geb=GEB_LABELS[gebTok]||(parts.length?parts[0]:'—');
+  const gebE=(NORM.gebaeude||[]).find(g=>String(g.code).toUpperCase()===gebTok);
+  const geb=gebE?gebE.label:(parts.length?parts[0]:'—');
   return {etage,bauteil:bt,media,geb};
 }
 function defaultLayerCfg(name){
   const p=parseLayer(name);
-  const h=p.bauteil?p.bauteil.h:(p.media?0:3.0);
+  const h=p.bauteil?p.bauteil.height:(p.media?0:3.0);
   const sill=(p.bauteil&&p.bauteil.sill)?p.bauteil.sill:0;
   const base=(p.etage?p.etage.idx:0)*floorHeight;
   return {height:h,base:base,sill:sill,extrude:(!p.media&&h>0),
     etageIdx:p.etage?p.etage.idx:0,etage:p.etage?p.etage.label:'—',geb:p.geb,bauteil:p.bauteil?p.bauteil.label:(p.media?'Medien':'—')};
 }
-function etageOrder(label){ const f=ETAGEN.find(e=>e.label===label); return f?f.idx:99; }
+function etageOrder(label){ const f=NORM.etagen.find(e=>e.label===label); return f?f.idx:99; }
 function mToScene(){ const f=({mm:1000,cm:100,m:1})[dxfUnit]||1; return f*(transform?transform.s:1); }
 function tx(x){return (x-transform.cx)*transform.s;} function tz(y){return -(y-transform.cy)*transform.s;}
 function buildDXF(){
@@ -1239,6 +1356,8 @@ function updateIdLabels(){
 function loadDXFText(text,name,opts){ opts=opts||{}; let m; try{m=DXF.parse(text);}catch(err){toast('Datei nicht lesbar: '+err.message,true);return;} if(!m.entities.length){toast('Keine unterstützte Geometrie gefunden.',true);return;}
   parsed=m; uploadName=name||'Hochgeladenes Modell'; hasUpload=true;
   lastDXFText=text; if(opts.serverId!==undefined) currentServerId=opts.serverId; else if(!opts.keepData) currentServerId=null;
+  // Layer-Norm des Modells übernehmen (falls mitgeliefert), sonst aktuelle Norm behalten
+  if(opts.norm && typeof opts.norm==='object'){ setNorm(opts.norm); }
   // Robuste Skalierung: Ausreißer-Geometrie (Streupunkte, Titelblöcke, Rahmen) ignorieren
   const _pts=[]; m.entities.forEach(e=>{ if(e.type==='LINE'){_pts.push([e.x1,e.y1],[e.x2,e.y2]);} else if(e.type==='POLYLINE'){e.verts.forEach(v=>_pts.push([v.x,v.y]));} else if(e.type==='CIRCLE'){_pts.push([e.cx-e.r,e.cy],[e.cx+e.r,e.cy],[e.cx,e.cy-e.r],[e.cx,e.cy+e.r]);} else if(e.type==='ARC'){_pts.push([e.cx,e.cy]);} else if(e.type==='3DFACE'){e.pts.forEach(p=>_pts.push([p.x,p.y]));} });
   const _xs=_pts.map(p=>p[0]).sort((a,b)=>a-b), _ys=_pts.map(p=>p[1]).sort((a,b)=>a-b);
@@ -1570,7 +1689,7 @@ async function loadServerModel(id){
     const r=await fetch('api/models/'+encodeURIComponent(id));
     if(!r.ok)throw new Error('Server '+r.status);
     const data=await r.json();
-    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}, objectData:data.objectData||{}});
+    loadDXFText(data.dxf, data.name||'Standortmodell', {serverId:id, pipes:data.pipes||[], layerData:data.layerData||{}, layerCfg:data.layerCfg||{}, objectData:data.objectData||{}, norm:data.norm||null});
   }catch(err){ toast('Standortmodell konnte nicht geladen werden: '+err.message,true); }
 }
 // Neue Geometrie (DWG/DXF) in ein bestehendes Standortmodell laden – Fachdaten bleiben erhalten
@@ -1594,7 +1713,7 @@ async function updateGeometryFromFile(file){
   // auf Server sichern (neue Geometrie + behaltene Fachdaten/Konfig)
   try{
     const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg, objectData:objectData})});
+      body:JSON.stringify({dxf:lastDXFText, layerData:layerData, layerCfg:layerCfg, objectData:objectData, norm:NORM})});
     if(!r.ok)throw new Error('Server '+r.status);
   }catch(err){ toast('Geometrie geladen, aber Server-Sicherung fehlgeschlagen: '+err.message,true); return; }
   toast('Geometrie aktualisiert · '+wieder+' Layer wiederverknüpft, '+neu+' neu'+(verwaist?', '+verwaist+' verwaist (Daten behalten)':''));
@@ -1608,7 +1727,7 @@ async function saveAsSiteModel(){
   try{
     const oldKey=currentModelKey();
     const pipes=drawnPipes.filter(d=>d.model===oldKey);
-    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData})});
+    const r=await fetch('api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,dxf:lastDXFText,pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM})});
     if(!r.ok)throw new Error((await r.text().catch(()=>''))||('Server '+r.status));
     const res=await r.json();
     const newKey='srv:'+res.id;
@@ -1625,9 +1744,9 @@ async function saveSitePipes(){
   toast('Änderungen werden gesichert …',false,true);
   try{
     const pipes=drawnPipes.filter(d=>d.model==='srv:'+currentServerId);
-    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData})});
+    const r=await fetch('api/models/'+currentServerId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({pipes:pipes,layerData:layerData,layerCfg:layerCfg,objectData:objectData,norm:NORM})});
     if(!r.ok)throw new Error('Server '+r.status);
-    toast('Änderungen gesichert (Leitungen + Fachdaten + Layer-Konfig).');
+    toast('Änderungen gesichert (Leitungen + Fachdaten + Layer-Konfig + Norm).');
   }catch(err){ toast('Sichern fehlgeschlagen: '+err.message,true); }
 }
 async function deleteSiteModel(){
