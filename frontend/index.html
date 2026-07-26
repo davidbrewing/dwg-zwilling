@@ -94,8 +94,8 @@
   .pipe-step .n{flex:0 0 26px;height:26px;border-radius:8px;background:var(--accent);color:#04121f;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
   .pipe-step .t b{font-size:13px}
   .pipe-step .t p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:2px}
-  #viewcube{position:absolute;right:14px;top:12px;width:116px;height:116px;z-index:6;cursor:pointer}
-  #viewcube canvas{display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,.45))}
+  #viewcube{position:absolute;right:16px;top:14px;width:118px;height:118px;z-index:6;cursor:pointer;overflow:visible}
+  #viewcube canvas{display:block;width:118px;height:118px;filter:drop-shadow(0 4px 12px rgba(0,0,0,.45))}
   input[type=file]{display:none}
   .toolpanel{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;display:none;flex-direction:column;gap:9px;background:rgba(15,23,32,.93);border:1px solid var(--line);padding:12px 14px;border-radius:12px;backdrop-filter:blur(6px);z-index:7;width:min(460px,92%);box-shadow:0 12px 34px rgba(0,0,0,.45)}
   .toolpanel.open{display:flex}
@@ -2107,16 +2107,17 @@ function dirToAngles(d){
 const ViewCube=(function(){
   const host=document.getElementById('viewcube');
   if(!host||typeof THREE==='undefined')return {render:function(){}};
-  const SIZE=116;
+  const SIZE=118;
   let cr;
   try{ cr=new THREE.WebGLRenderer({alpha:true,antialias:true}); }catch(e){ return {render:function(){}}; }
   cr.setPixelRatio(Math.min(devicePixelRatio,2));
-  cr.setSize(SIZE,SIZE,false);
+  cr.setSize(SIZE,SIZE);   // CSS-Größe MUSS gesetzt werden, sonst läuft der Canvas bei Retina über den Rahmen
+  cr.domElement.style.width=SIZE+'px'; cr.domElement.style.height=SIZE+'px';
   host.appendChild(cr.domElement);
   const cScene=new THREE.Scene();
   cScene.add(new THREE.HemisphereLight(0xffffff,0x5a6675,1.15));
   const dl=new THREE.DirectionalLight(0xffffff,0.5); dl.position.set(2,3,4); cScene.add(dl);
-  const cCam=new THREE.OrthographicCamera(-0.95,0.95,0.95,-0.95,0.1,20);
+  const cCam=new THREE.OrthographicCamera(-1.06,1.06,1.06,-1.06,0.1,20);   // etwas Rand, damit der Würfel auch in Eck-/Kantenansicht komplett sichtbar bleibt
   // Beschriftungs-Textur je Fläche
   function faceTex(label){
     const c=document.createElement('canvas'); c.width=c.height=128; const g=c.getContext('2d');
